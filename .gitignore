@@ -1,0 +1,55 @@
+# C# / .NET
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa]rm/
+[Aa]rm64/
+bld/
+publish/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.csproj.user
+launchSettings.json
+
+# NuGet
+*.nupkg
+**/packages/*
+!**/packages/build/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+nul
+
+# Old Electron artifacts
+dist/
+node_modules/
+build/
+
+# Claude/MCP artifacts
+.autoforge/
+.playwright-mcp/
+.claude/
