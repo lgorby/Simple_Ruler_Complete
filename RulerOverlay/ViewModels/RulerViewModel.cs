@@ -141,6 +141,7 @@ namespace RulerOverlay.ViewModels
                 if (SetProperty(ref _opacity, value))
                 {
                     OnPropertyChanged(nameof(OpacityValue));
+                    OnPropertyChanged(nameof(BackgroundBrush));
                     AutoSaveConfiguration();
                 }
             }

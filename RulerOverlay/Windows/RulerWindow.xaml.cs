@@ -280,13 +280,16 @@ namespace RulerOverlay.Windows
                 Visible = false // Hidden by default, shown on minimize
             };
 
-            // Create a simple icon (cyan square representing the ruler)
-            using (var bitmap = new Drawing.Bitmap(16, 16))
-            using (var g = Drawing.Graphics.FromImage(bitmap))
-            {
-                g.Clear(Drawing.Color.Cyan);
-                _notifyIcon.Icon = Drawing.Icon.FromHandle(bitmap.GetHicon());
-            }
+            // Use the application's embedded icon for the system tray
+            var exePath = System.Environment.ProcessPath;
+            if (exePath != null)
+                _notifyIcon.Icon = Drawing.Icon.ExtractAssociatedIcon(exePath);
+
+            // Right-click context menu for the tray icon
+            var trayMenu = new WinForms.ContextMenuStrip();
+            trayMenu.Items.Add("Show Ruler", null, (s, e) => RestoreFromTray());
+            trayMenu.Items.Add("Exit", null, (s, e) => Close());
+            _notifyIcon.ContextMenuStrip = trayMenu;
 
             // Double-click to restore window
             _notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
