@@ -356,14 +356,6 @@
             </Grid>
         </Border>
 
-        <!-- Magnifier Popup -->
-        <Popup x:Name="MagnifierPopup"
-               Placement="Absolute"
-               AllowsTransparency="True"
-               IsOpen="False">
-            <local:MagnifierControl x:Name="Magnifier"/>
-        </Popup>
-
             <!-- Toast Notification -->
             <local:ToastControl x:Name="Toast"
                                 HorizontalAlignment="Center"
@@ -372,5 +364,13 @@
                                 IsHitTestVisible="False"
                                 Panel.ZIndex="-1"/>
         </Grid>
+
+        <!-- Magnifier Popup (outside RootGrid so it is not affected by ruler rotation) -->
+        <Popup x:Name="MagnifierPopup"
+               Placement="Absolute"
+               AllowsTransparency="True"
+               IsOpen="False">
+            <local:MagnifierControl x:Name="Magnifier"/>
+        </Popup>
     </Canvas>
 </Window>

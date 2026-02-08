@@ -40,6 +40,19 @@
                          StrokeThickness="1"/>
             </Canvas>
 
+            <!-- Position Indicator -->
+            <TextBlock x:Name="PositionText"
+                       Text=""
+                       Foreground="Yellow"
+                       Background="#CC000000"
+                       Padding="5,2"
+                       FontSize="11"
+                       FontWeight="Bold"
+                       HorizontalAlignment="Left"
+                       VerticalAlignment="Bottom"
+                       Margin="5,0,0,5"
+                       Visibility="Collapsed"/>
+
             <!-- Zoom Level Indicator -->
             <TextBlock x:Name="ZoomLevelText"
                        Text="4x"

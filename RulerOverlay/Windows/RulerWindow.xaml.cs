@@ -776,6 +776,7 @@ namespace RulerOverlay.Windows
             if (nearEdge)
             {
                 ShowMagnifier();
+                Magnifier.UpdatePosition(position.X, _viewModel.Unit, _viewModel.Ppi);
             }
             else
             {

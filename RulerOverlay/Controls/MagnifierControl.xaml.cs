@@ -45,6 +45,14 @@ namespace RulerOverlay.Controls
             set => _rotation = value;
         }
 
+        public void UpdatePosition(double pixelPosition, string unit, double ppi)
+        {
+            var engine = new MeasurementEngine(ppi);
+            var result = engine.Convert(pixelPosition, unit);
+            PositionText.Text = result.Formatted;
+            PositionText.Visibility = Visibility.Visible;
+        }
+
         public void Start()
         {
             _updateTimer.Start();
@@ -54,6 +62,7 @@ namespace RulerOverlay.Controls
         {
             _updateTimer.Stop();
             MagnifierImage.Source = null;
+            PositionText.Visibility = Visibility.Collapsed;
         }
 
         private void UpdateTimer_Tick(object? sender, EventArgs e)
@@ -85,17 +94,6 @@ namespace RulerOverlay.Controls
                     );
 
                     MagnifierImage.Source = scaled;
-
-                    // Rotate the image to match the ruler's orientation
-                    if (_rotation != 0)
-                    {
-                        MagnifierImage.RenderTransformOrigin = new Point(0.5, 0.5);
-                        MagnifierImage.RenderTransform = new RotateTransform(-_rotation);
-                    }
-                    else
-                    {
-                        MagnifierImage.RenderTransform = null;
-                    }
                 }
             }
             catch
