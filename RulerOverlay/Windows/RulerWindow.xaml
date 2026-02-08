@@ -32,7 +32,7 @@
             <Setter Property="Height" Value="18"/>
             <Setter Property="Margin" Value="4,0"/>
             <Setter Property="Padding" Value="0"/>
-            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Background" Value="#80FFFFFF"/>
             <Setter Property="Foreground" Value="#333333"/>
@@ -78,7 +78,6 @@
             <!-- Main Ruler Background -->
         <Border x:Name="RulerBackground"
                 Background="{Binding BackgroundBrush}"
-                Opacity="{Binding OpacityValue}"
                 CornerRadius="3">
 
             <!-- Context Menu -->
@@ -276,11 +275,21 @@
                         Width="{Binding Width}"
                         Height="{Binding Height}" />
 
-                <!-- Mini Function Icons -->
+                <!-- Mini Function Icons (visible on hover) -->
                 <StackPanel Orientation="Horizontal"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"
-                            Margin="0,0">
+                            Margin="0,8,0,0">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Opacity" Value="0"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsMouseOver, ElementName=RulerBackground}" Value="True">
+                                    <Setter Property="Opacity" Value="1"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
                     <!-- Minimize to Tray Icon -->
                     <Button Content="▼"
                             Click="MinimizeToTray_Click"
@@ -288,10 +297,11 @@
                             Style="{StaticResource MiniIconButtonStyle}"/>
 
                     <!-- Rotate Icon -->
-                    <Button Content="↻"
-                            Click="QuickRotate_Click"
+                    <Button Click="QuickRotate_Click"
                             ToolTip="Rotate 90°"
-                            Style="{StaticResource MiniIconButtonStyle}"/>
+                            Style="{StaticResource MiniIconButtonStyle}">
+                        <TextBlock Text="⤾" Margin="0,-4,0,0"/>
+                    </Button>
 
                     <!-- Point-to-Point Icon -->
                     <Button Content="⟷"

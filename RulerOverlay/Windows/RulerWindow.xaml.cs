@@ -15,7 +15,7 @@ using MouseButtonState = System.Windows.Input.MouseButtonState;
 using Key = System.Windows.Input.Key;
 using Keyboard = System.Windows.Input.Keyboard;
 using Mouse = System.Windows.Input.Mouse;
-using ModifierKeys = System.Windows.Input.ModifierKeys;
+
 
 namespace RulerOverlay.Windows
 {
@@ -24,7 +24,6 @@ namespace RulerOverlay.Windows
         private readonly ConfigurationService _configService;
         private readonly RulerViewModel _viewModel;
         private readonly Services.EdgeSnappingService _edgeSnapping;
-        private Services.GlobalHotkeyService? _globalHotkeys;
         private WinForms.NotifyIcon? _notifyIcon;
 
         private bool _isResizing = false;
@@ -255,87 +254,14 @@ namespace RulerOverlay.Windows
             Win32Helper.SetWindowLong(hwnd, Win32Helper.GWL_EXSTYLE,
                 extendedStyle | Win32Helper.WS_EX_LAYERED | Win32Helper.WS_EX_TOOLWINDOW);
 
-            // Initialize global hotkeys
-            InitializeGlobalHotkeys();
+            // Keyboard shortcuts are handled locally via Window_PreviewKeyDown
         }
 
-        private void InitializeGlobalHotkeys()
-        {
-            _globalHotkeys = new Services.GlobalHotkeyService(this);
-            _globalHotkeys.Initialize();
-
-            // Register all hotkeys
-            // Ctrl+R - Reset Position
-            _globalHotkeys.RegisterHotkey(ModifierKeys.Control, Key.R, () =>
-            {
-                _viewModel.ResetPositionCommand.Execute(null);
-            });
-
-            // Ctrl+C - Copy Measurement
-            _globalHotkeys.RegisterHotkey(ModifierKeys.Control, Key.C, () =>
-            {
-                _viewModel.CopyMeasurementCommand.Execute(null);
-            });
-
-            // Ctrl+T - Toggle Transparency
-            _globalHotkeys.RegisterHotkey(ModifierKeys.Control, Key.T, () =>
-            {
-                // Cycle through transparency levels: 100 -> 80 -> 60 -> 40 -> 20 -> 100
-                int newOpacity = _viewModel.Opacity switch
-                {
-                    100 => 80,
-                    80 => 60,
-                    60 => 40,
-                    40 => 20,
-                    _ => 100
-                };
-                _viewModel.Opacity = newOpacity;
-            });
-
-            // Ctrl+M - Toggle Magnifier
-            _globalHotkeys.RegisterHotkey(ModifierKeys.Control, Key.M, () =>
-            {
-                _viewModel.ToggleMagnifierCommand.Execute(null);
-            });
-
-            // Ctrl+S - Toggle Edge Snapping
-            _globalHotkeys.RegisterHotkey(ModifierKeys.Control, Key.S, () =>
-            {
-                _viewModel.ToggleEdgeSnappingCommand.Execute(null);
-            });
-
-            // Ctrl+P - Point-to-Point Mode
-            _globalHotkeys.RegisterHotkey(ModifierKeys.Control, Key.P, () =>
-            {
-                PointToPointMode_Click(this, new RoutedEventArgs());
-            });
-
-            // Ctrl+Q - Quit
-            _globalHotkeys.RegisterHotkey(ModifierKeys.Control, Key.Q, () =>
-            {
-                Close();
-            });
-
-            // Ctrl+G - Clear All Guides
-            _globalHotkeys.RegisterHotkey(ModifierKeys.Control, Key.G, () =>
-            {
-                _viewModel.ClearGuidesCommand.Execute(null);
-            });
-
-            // F1 - Help
-            _globalHotkeys.RegisterHotkey(ModifierKeys.None, Key.F1, () =>
-            {
-                ShowHelpWindow();
-            });
-        }
 
         private void RulerWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             // Save configuration before closing
             _viewModel.SaveConfiguration();
-
-            // Unregister global hotkeys
-            _globalHotkeys?.Dispose();
 
             // Dispose system tray icon
             if (_notifyIcon != null)
@@ -411,7 +337,67 @@ namespace RulerOverlay.Windows
 
         private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
-            int step = (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift)) ? 10 : 1;
+            bool ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            bool shift = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+
+            // Handle Ctrl+ shortcuts (local to this window only)
+            if (ctrl)
+            {
+                switch (e.Key)
+                {
+                    case Key.R:
+                        _viewModel.ResetPositionCommand.Execute(null);
+                        e.Handled = true;
+                        return;
+                    case Key.C:
+                        _viewModel.CopyMeasurementCommand.Execute(null);
+                        e.Handled = true;
+                        return;
+                    case Key.T:
+                        int newOpacity = _viewModel.Opacity switch
+                        {
+                            100 => 80,
+                            80 => 60,
+                            60 => 40,
+                            40 => 20,
+                            _ => 100
+                        };
+                        _viewModel.Opacity = newOpacity;
+                        e.Handled = true;
+                        return;
+                    case Key.M:
+                        _viewModel.ToggleMagnifierCommand.Execute(null);
+                        e.Handled = true;
+                        return;
+                    case Key.S:
+                        _viewModel.ToggleEdgeSnappingCommand.Execute(null);
+                        e.Handled = true;
+                        return;
+                    case Key.P:
+                        PointToPointMode_Click(this, new RoutedEventArgs());
+                        e.Handled = true;
+                        return;
+                    case Key.Q:
+                        Close();
+                        e.Handled = true;
+                        return;
+                    case Key.G:
+                        _viewModel.ClearGuidesCommand.Execute(null);
+                        e.Handled = true;
+                        return;
+                }
+            }
+
+            // F1 - Help (no modifier)
+            if (e.Key == Key.F1)
+            {
+                ShowHelpWindow();
+                e.Handled = true;
+                return;
+            }
+
+            // Arrow key nudge
+            int step = shift ? 10 : 1;
 
             switch (e.Key)
             {

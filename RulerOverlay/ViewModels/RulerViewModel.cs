@@ -6,6 +6,8 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
+using Colors = System.Windows.Media.Colors;
+using SolidColorBrush = System.Windows.Media.SolidColorBrush;
 
 namespace RulerOverlay.ViewModels
 {
@@ -234,14 +236,15 @@ namespace RulerOverlay.ViewModels
         {
             get
             {
-                return _color.ToLower() switch
+                var color = _color.ToLower() switch
                 {
-                    "white" => Brushes.White,
-                    "black" => Brushes.Black,
-                    "yellow" => Brushes.Yellow,
-                    "cyan" => Brushes.Cyan,
-                    _ => Brushes.White
+                    "white" => Colors.White,
+                    "black" => Colors.Black,
+                    "yellow" => Colors.Yellow,
+                    "cyan" => Colors.Cyan,
+                    _ => Colors.White
                 };
+                return new SolidColorBrush(color) { Opacity = OpacityValue };
             }
         }
 
