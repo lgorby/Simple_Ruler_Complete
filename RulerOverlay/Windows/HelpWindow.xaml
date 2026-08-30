@@ -256,6 +256,16 @@
                     <Run Text="• Right-click → Enable/Disable Magnifier"/>
                 </TextBlock>
 
+                <!-- Transparency Section -->
+                <TextBlock Text="Transparency" Style="{StaticResource SectionTitleStyle}"/>
+                <TextBlock TextWrapping="Wrap" Margin="0,5">
+                    <Run Text="• Ctrl+T steps through 100%, 80%, 60%, 40%, 20%; right-click → Transparency picks a level"/>
+                    <LineBreak/>
+                    <Run Text="• Transparency applies to the ruler body only. Tick marks and numbers stay fully opaque so the scale is always readable"/>
+                    <LineBreak/>
+                    <Run Text="• Markings are outlined in a contrasting tone, so they stay legible at any transparency and over any window behind them"/>
+                </TextBlock>
+
                 <!-- Closing Section -->
                 <TextBlock Text="Closing the App" Style="{StaticResource SectionTitleStyle}"/>
                 <TextBlock TextWrapping="Wrap" Margin="0,5">
