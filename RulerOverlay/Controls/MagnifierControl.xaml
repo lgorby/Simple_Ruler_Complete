@@ -18,27 +18,46 @@
                    RenderOptions.BitmapScalingMode="NearestNeighbor"/>
 
             <!--
-                Crosshair. Laid out with alignment rather than fixed coordinates so it stays
-                centred if the magnifier size ever changes.
+                Open reticle. The crosshair is split into four segments and the centre marker
+                is a hollow circle, so the pixel under the cursor - the whole reason to
+                magnify - is never painted over. A solid dot or an unbroken crosshair hides
+                exactly what the user is trying to read.
+
+                Built from a 3x3 grid rather than fixed coordinates so it stays centred if
+                the magnifier size changes; the middle cell is the clear zone.
             -->
-            <Rectangle Width="1"
-                       Fill="Red"
-                       Opacity="0.7"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Stretch"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="18"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="18"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-            <Rectangle Height="1"
-                       Fill="Red"
-                       Opacity="0.7"
-                       HorizontalAlignment="Stretch"
-                       VerticalAlignment="Center"/>
+                <!-- Crosshair arms, stopping at the edge of the clear centre -->
+                <Rectangle Grid.Row="0" Grid.Column="1" Width="1" Fill="Red" Opacity="0.75"
+                           HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
+                <Rectangle Grid.Row="2" Grid.Column="1" Width="1" Fill="Red" Opacity="0.75"
+                           HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
+                <Rectangle Grid.Row="1" Grid.Column="0" Height="1" Fill="Red" Opacity="0.75"
+                           HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
+                <Rectangle Grid.Row="1" Grid.Column="2" Height="1" Fill="Red" Opacity="0.75"
+                           HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
 
-            <Ellipse Width="6" Height="6"
-                     Fill="Red"
-                     Stroke="White"
-                     StrokeThickness="1"
-                     HorizontalAlignment="Center"
-                     VerticalAlignment="Center"/>
+                <!-- Hollow centre marker: outlined, never filled -->
+                <Ellipse Grid.Row="1" Grid.Column="1"
+                         Width="14" Height="14"
+                         Fill="Transparent"
+                         Stroke="Red"
+                         StrokeThickness="1"
+                         Opacity="0.9"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"/>
+            </Grid>
 
             <!-- Position along the ruler, in the active unit -->
             <TextBlock x:Name="PositionText"
