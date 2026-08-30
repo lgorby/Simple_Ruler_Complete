@@ -66,6 +66,9 @@ namespace RulerOverlay.Models
         /// <summary>How close to a ruler edge the cursor must be for the magnifier to appear.</summary>
         public const double MagnifierEdgeThreshold = 15.0;
 
+        /// <summary>Gap between the magnifier and the screen edge it parks against, in DIPs.</summary>
+        public const double MagnifierMargin = 10.0;
+
         // --- Calibration ----------------------------------------------------
         public const double MinScreenDiagonalInches = 5;
         public const double MaxScreenDiagonalInches = 100;

@@ -4,11 +4,11 @@ A desktop measurement overlay tool that provides precise on-screen measurements 
 
 ## Features
 
-- **Precise Measurements**: Display measurements in pixels, inches, or centimeters
+- **Precise Measurements**: Display measurements in real screen pixels, inches, or centimeters, correct on high-DPI and scaled displays
 - **Flexible Ruler**: Move, resize, and rotate the ruler to preset angles
 - **Point-to-Point Mode**: Click and drag to measure distances between any two points
 - **Edge Highlighting**: Create temporary visual guides on the ruler
-- **Magnifier**: Zoom in on ruler corners for precise pixel measurements
+- **Magnifier**: Zoom in near any ruler edge for precise pixel placement
 - **Edge Snapping**: Automatically snap to color boundaries on screen
 - **Calibration**: Calibrate to your specific screen for accurate measurements
 - **Customization**: Adjust transparency and choose from multiple colors
@@ -110,6 +110,21 @@ dotnet publish -c Release
 
 The executable can be run from any location without installation.
 
+## How Measurements Work
+
+The ruler measures in **physical screen pixels**, not the scaled ("logical" or
+device-independent) pixels that WPF, CSS and most design tools use. On a display
+running at 125% scaling, a ruler reading `500 px` covers 500 actual device pixels
+— it will look shorter than a 500-unit measurement in a tool that reports logical
+pixels, and that is the intended behaviour for a screen ruler.
+
+This also matters for inches and centimetres: calibration derives PPI from your
+monitor's true pixel resolution, so it is only consistent if the length it is
+applied to is measured in those same real pixels.
+
+The ruler re-detects scaling when dragged between monitors, so it stays accurate
+on a mixed-DPI multi-monitor setup.
+
 ## Configuration
 
 All settings are stored in a JSON config file located in the Windows AppData folder:
@@ -154,6 +169,15 @@ every other application.
 5. **Calibrate**: Right-click > Calibrate Screen, then enter your screen diagonal in inches
 6. **Point-to-Point**: Press Ctrl+P or right-click > Point-to-Point Mode, then click and drag to measure
 7. **Edge Guides**: Shift+click on the ruler to drop a magenta guide; Shift+click a guide to remove it
+8. **Edge Snapping**: Press Ctrl+S, then drag a ruler end to within ~8 px of a colour boundary and it snaps onto it. Works while the ruler is horizontal, and snaps to the *visible* window edge rather than the invisible resize border Windows adds
+9. **Magnifier**: Press Ctrl+M, then move the cursor near a ruler edge. The caption reads `cursor position / ruler length`. In point-to-point mode it is on by default (press M to toggle) and shows the live distance
+
+## Closing the App
+
+The ruler is an overlay with no title bar, so it closes only through its own exit
+points: the **✕** button, **Ctrl+Q**, or **Exit** on the system-tray icon. External
+close requests such as Alt+F4 are ignored, so a stray keystroke cannot dismiss the
+ruler mid-measurement. A Windows sign-out or shutdown still closes it normally.
 
 ## License
 

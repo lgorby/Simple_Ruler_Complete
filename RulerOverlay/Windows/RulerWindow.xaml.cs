@@ -65,6 +65,19 @@ namespace RulerOverlay.Windows
 
         private bool _isClosing;
 
+        /// <summary>
+        /// Set only by <see cref="RequestClose"/>. Any close that did not come from one of
+        /// the app's own exit affordances is refused, so the overlay cannot be dismissed by
+        /// a stray Alt+F4 while the user is measuring.
+        /// </summary>
+        private bool _closeRequested;
+
+        /// <summary>Windows is logging off or shutting down; a close must not be refused.</summary>
+        private bool _sessionEnding;
+
+        /// <summary>The modal point-to-point overlay, while it is open.</summary>
+        private PointToPointWindow? _pointToPointWindow;
+
         public RulerWindow()
         {
             InitializeComponent();
@@ -81,9 +94,13 @@ namespace RulerOverlay.Windows
             MouseMove += RulerWindow_MouseMove;
             MouseLeave += RulerWindow_MouseLeave;
             SizeChanged += RulerWindow_SizeChanged;
+            StateChanged += RulerWindow_StateChanged;
 
             _viewModel.MeasurementCopied += ViewModel_MeasurementCopied;
             Toast.Dismissed += (_, _) => ToastPopup.IsOpen = false;
+
+            if (Application.Current != null)
+                Application.Current.SessionEnding += Application_SessionEnding;
         }
 
         #region Lifecycle
@@ -119,8 +136,37 @@ namespace RulerOverlay.Windows
             InitializeSystemTray();
         }
 
+        private void Application_SessionEnding(object? sender, SessionEndingCancelEventArgs e) =>
+            _sessionEnding = true;
+
+        /// <summary>
+        /// The single funnel for intentionally quitting: the close button, Ctrl+Q and the
+        /// tray Exit item all route through here.
+        /// </summary>
+        private void RequestClose()
+        {
+            _closeRequested = true;
+
+            // A modal child would otherwise keep its own message loop running and block
+            // the owner from closing.
+            if (_pointToPointWindow != null)
+            {
+                _pointToPointWindow.Close();
+                _pointToPointWindow = null;
+            }
+
+            Close();
+        }
+
         private void RulerWindow_Closing(object? sender, CancelEventArgs e)
         {
+            if (!_closeRequested && !_sessionEnding)
+            {
+                // Not one of the app's own exit paths, so leave the ruler where it is.
+                e.Cancel = true;
+                return;
+            }
+
             _isClosing = true;
 
             // Flush any change still sitting in the debounce window.
@@ -133,8 +179,19 @@ namespace RulerOverlay.Windows
             _viewModel.MeasurementCopied -= ViewModel_MeasurementCopied;
             _viewModel.Dispose();
 
+            if (Application.Current != null)
+                Application.Current.SessionEnding -= Application_SessionEnding;
+
+            // Popups are separate top-level windows; leaving one open can keep the
+            // process alive after the ruler itself has gone.
             HideMagnifier();
+            ToastPopup.IsOpen = false;
+
             DisposeSystemTray();
+
+            // ShutdownMode alone would normally suffice, but being explicit guarantees
+            // the process ends even if some other window is still referenced.
+            Application.Current?.Shutdown();
         }
 
         /// <summary>
@@ -320,7 +377,7 @@ namespace RulerOverlay.Windows
             {
                 _trayMenu = new WinForms.ContextMenuStrip();
                 _trayMenu.Items.Add("Show Ruler", null, (_, _) => RestoreFromTray());
-                _trayMenu.Items.Add("Exit", null, (_, _) => Close());
+                _trayMenu.Items.Add("Exit", null, (_, _) => RequestClose());
 
                 _notifyIcon = new WinForms.NotifyIcon
                 {
@@ -368,14 +425,18 @@ namespace RulerOverlay.Windows
 
         private void MinimizeToTray()
         {
+            HideMagnifier();
+
             if (_notifyIcon == null)
             {
-                // No tray icon means no way back, so minimize normally instead of hiding.
+                // Without a tray icon there is nothing to click to get the ruler back, and
+                // the window has no taskbar button either, so a plain minimize would strand
+                // it. Give it a taskbar button for the trip.
+                ShowInTaskbar = true;
                 WindowState = WindowState.Minimized;
                 return;
             }
 
-            HideMagnifier();
             _notifyIcon.Visible = true;
             Hide();
         }
@@ -387,7 +448,20 @@ namespace RulerOverlay.Windows
 
             Show();
             WindowState = WindowState.Normal;
+
+            // Back to overlay behaviour: no taskbar presence while visible.
+            ShowInTaskbar = false;
             Activate();
+        }
+
+        /// <summary>
+        /// Restores overlay behaviour if the window was un-minimized from the taskbar
+        /// rather than through the tray icon.
+        /// </summary>
+        private void RulerWindow_StateChanged(object? sender, EventArgs e)
+        {
+            if (WindowState == WindowState.Normal && ShowInTaskbar)
+                ShowInTaskbar = false;
         }
 
         private void DisposeSystemTray()
@@ -447,7 +521,7 @@ namespace RulerOverlay.Windows
                 menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
         }
 
-        private void CloseApp_Click(object sender, RoutedEventArgs e) => Close();
+        private void CloseApp_Click(object sender, RoutedEventArgs e) => RequestClose();
 
         #endregion
 
@@ -516,7 +590,7 @@ namespace RulerOverlay.Windows
                     return true;
 
                 case Key.Q:
-                    Close();
+                    RequestClose();
                     return true;
 
                 default:
@@ -1021,28 +1095,14 @@ namespace RulerOverlay.Windows
         /// </summary>
         private void UpdateMagnifierPosition()
         {
-            const double size = RulerDefaults.MagnifierSize;
-            const double margin = 10;
-
             var cursorScreen = PointToScreen(Mouse.GetPosition(this));
-            var work = ScreenHelper.GetWorkingAreaFromPhysicalPoint(cursorScreen.X, cursorScreen.Y);
-            var dpi = ScreenHelper.GetDpiScale(this);
 
-            // Popup offsets are in device-independent units; the working area is physical.
-            double workLeft = ScreenHelper.ToLogical(work.Left, dpi.X);
-            double workTop = ScreenHelper.ToLogical(work.Top, dpi.Y);
-            double workRight = ScreenHelper.ToLogical(work.Right, dpi.X);
-            double workBottom = ScreenHelper.ToLogical(work.Bottom, dpi.Y);
+            var (x, y) = ScreenHelper.GetOverlayCornerPosition(
+                cursorScreen.X, cursorScreen.Y,
+                RulerDefaults.MagnifierSize, RulerDefaults.MagnifierMargin, _pixelScale);
 
-            bool cursorInRightHalf = cursorScreen.X > work.Left + work.Width / 2.0;
-            bool cursorInBottomHalf = cursorScreen.Y > work.Top + work.Height / 2.0;
-
-            // Keep the magnifier out from under the cursor: prefer the opposite corner.
-            double targetX = cursorInRightHalf ? workLeft + margin : workRight - size - margin;
-            double targetY = cursorInBottomHalf ? workTop + margin : workBottom - size - margin;
-
-            MagnifierPopup.HorizontalOffset = targetX;
-            MagnifierPopup.VerticalOffset = targetY;
+            MagnifierPopup.HorizontalOffset = x;
+            MagnifierPopup.VerticalOffset = y;
         }
 
         private void HideMagnifier()
@@ -1068,7 +1128,8 @@ namespace RulerOverlay.Windows
                 new MeasurementEngine(_viewModel.Ppi),
                 _viewModel.Unit);
 
-            var window = new PointToPointWindow(viewModel) { Owner = this };
+            var window = new PointToPointWindow(viewModel, _viewModel.MagnifierZoom) { Owner = this };
+            _pointToPointWindow = window;
 
             // The ruler would otherwise sit on top of the measurement overlay.
             Visibility = Visibility.Hidden;
@@ -1078,8 +1139,12 @@ namespace RulerOverlay.Windows
             }
             finally
             {
-                // Restore even if the dialog throws, so the ruler cannot be left invisible.
-                Visibility = Visibility.Visible;
+                _pointToPointWindow = null;
+
+                // Restore even if the dialog throws, so the ruler cannot be left invisible,
+                // unless the app is on its way out.
+                if (!_closeRequested)
+                    Visibility = Visibility.Visible;
             }
         }
 

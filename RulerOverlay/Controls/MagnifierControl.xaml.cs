@@ -71,7 +71,23 @@ namespace RulerOverlay.Controls
         public void UpdatePosition(double pixelPosition, double totalPixels, MeasurementUnit unit, double ppi)
         {
             _measurementEngine.Ppi = ppi;
-            PositionText.Text = _measurementEngine.FormatWithTotal(pixelPosition, totalPixels, unit);
+            SetCaption(_measurementEngine.FormatWithTotal(pixelPosition, totalPixels, unit));
+        }
+
+        /// <summary>
+        /// Sets the caption directly. Point-to-point mode uses this to show the live
+        /// distance, which has no ruler position to report.
+        /// Passing null or empty hides the caption.
+        /// </summary>
+        public void SetCaption(string? text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                PositionText.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            PositionText.Text = text;
             PositionText.Visibility = Visibility.Visible;
         }
 

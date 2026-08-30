@@ -117,6 +117,38 @@ namespace RulerOverlay.Helpers
         }
 
         /// <summary>
+        /// Places a fixed-size overlay in whichever corner of the cursor's monitor is
+        /// furthest from the cursor, so it never sits under what the user is pointing at.
+        ///
+        /// Returned in device-independent pixels, ready for a Popup's Horizontal/Vertical
+        /// offsets, which are DIP-based even though the working area is reported in
+        /// physical pixels.
+        /// </summary>
+        /// <param name="cursorPhysicalX">Cursor X in physical screen pixels.</param>
+        /// <param name="cursorPhysicalY">Cursor Y in physical screen pixels.</param>
+        /// <param name="sizeDip">Edge length of the overlay, in DIPs.</param>
+        /// <param name="marginDip">Gap to leave against the screen edges, in DIPs.</param>
+        /// <param name="dpiScale">Physical pixels per DIP on that monitor.</param>
+        public static (double X, double Y) GetOverlayCornerPosition(
+            double cursorPhysicalX, double cursorPhysicalY,
+            double sizeDip, double marginDip, double dpiScale)
+        {
+            var work = GetWorkingAreaFromPhysicalPoint(cursorPhysicalX, cursorPhysicalY);
+
+            double workLeft = ToLogical(work.Left, dpiScale);
+            double workTop = ToLogical(work.Top, dpiScale);
+            double workRight = ToLogical(work.Right, dpiScale);
+            double workBottom = ToLogical(work.Bottom, dpiScale);
+
+            bool cursorInRightHalf = cursorPhysicalX > work.Left + work.Width / 2.0;
+            bool cursorInBottomHalf = cursorPhysicalY > work.Top + work.Height / 2.0;
+
+            return (
+                cursorInRightHalf ? workLeft + marginDip : workRight - sizeDip - marginDip,
+                cursorInBottomHalf ? workTop + marginDip : workBottom - sizeDip - marginDip);
+        }
+
+        /// <summary>
         /// Centers a rectangle of the given size on the primary monitor, in physical pixels.
         /// </summary>
         public static Drawing.Point GetCenteredPosition(int width, int height)
