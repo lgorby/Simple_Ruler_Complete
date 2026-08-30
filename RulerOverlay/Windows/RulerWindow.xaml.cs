@@ -221,6 +221,9 @@ namespace RulerOverlay.Windows
 
             // Lets the on-ruler chrome cancel the scale out and stay a usable size.
             _viewModel.PixelScale = _pixelScale;
+
+            // The magnifier draws its reticle in real device pixels.
+            Magnifier.PixelScale = _pixelScale;
         }
 
         protected override void OnSourceInitialized(EventArgs e)

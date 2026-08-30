@@ -16,6 +16,9 @@ namespace RulerOverlay.Controls
     /// </summary>
     public partial class MagnifierControl : UserControl
     {
+        /// <summary>Smallest clear zone around the marked pixel, in DIPs.</summary>
+        private const double MinReticleGap = 12;
+
         /// <summary>How often the magnified image refreshes while visible.</summary>
         private static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(50);
 
@@ -28,6 +31,9 @@ namespace RulerOverlay.Controls
 
         private int _zoomLevel = RulerDefaults.MagnifierZoom;
 
+        /// <summary>Physical screen pixels per DIP, so strokes can be exactly one pixel.</summary>
+        private double _pixelScale = 1.0;
+
         public MagnifierControl()
         {
             InitializeComponent();
@@ -36,6 +42,57 @@ namespace RulerOverlay.Controls
             _updateTimer.Tick += UpdateTimer_Tick;
 
             UpdateZoomCaption();
+            ApplyReticleMetrics();
+        }
+
+        /// <summary>
+        /// Physical screen pixels per DIP on the monitor showing the magnifier.
+        /// Set by the hosting window so the reticle can be drawn one device pixel thick.
+        /// </summary>
+        public double PixelScale
+        {
+            get => _pixelScale;
+            set
+            {
+                if (value <= 0 || Math.Abs(value - _pixelScale) < 0.0001)
+                    return;
+
+                _pixelScale = value;
+                ApplyReticleMetrics();
+            }
+        }
+
+        /// <summary>
+        /// Sizes the reticle in real pixels.
+        ///
+        /// Strokes are 1/DPI device-independent pixels, which is exactly one device pixel;
+        /// the marker is one magnified source pixel across; and the whole reticle is shifted
+        /// half a magnified pixel because the capture puts the cursor's own pixel at the
+        /// image midpoint, i.e. the midpoint is that pixel's leading edge rather than its
+        /// centre.
+        /// </summary>
+        private void ApplyReticleMetrics()
+        {
+            double hairline = 1.0 / _pixelScale;
+            double sourcePixel = _zoomLevel;
+
+            // Leave clear space around the marked pixel so the arms never cover it.
+            double gap = Math.Max(MinReticleGap, sourcePixel * 3);
+
+            ReticleGapColumn.Width = new GridLength(gap);
+            ReticleGapRow.Height = new GridLength(gap);
+
+            CrosshairTop.Width = hairline;
+            CrosshairBottom.Width = hairline;
+            CrosshairLeft.Height = hairline;
+            CrosshairRight.Height = hairline;
+
+            PixelMarker.Width = sourcePixel;
+            PixelMarker.Height = sourcePixel;
+            PixelMarker.StrokeThickness = hairline;
+
+            ReticleOffset.X = sourcePixel / 2.0;
+            ReticleOffset.Y = sourcePixel / 2.0;
         }
 
         /// <summary>
@@ -54,6 +111,7 @@ namespace RulerOverlay.Controls
 
                 _zoomLevel = clamped;
                 UpdateZoomCaption();
+                ApplyReticleMetrics();
             }
         }
 
