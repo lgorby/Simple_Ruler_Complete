@@ -1,0 +1,39 @@
+# Line-ending policy.
+#
+# Without this file, behaviour depends on each developer's core.autocrlf
+# setting, so the same checkout can produce different line endings on
+# different machines and show whole files as modified.
+#
+# Text files are stored with LF in the repository and checked out with the
+# platform's convention, except where a tool genuinely requires CRLF.
+
+* text=auto
+
+# Source and markup
+*.cs        text diff=csharp
+*.xaml      text
+*.csproj    text
+*.props     text
+*.targets   text
+*.json      text
+*.md        text
+*.yml       text
+*.yaml      text
+*.config    text
+
+# Windows tooling that expects CRLF
+*.sln       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary assets - never convert, never diff as text
+*.ico       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.pdf       binary
+*.dll       binary
+*.exe       binary
+*.pdb       binary
