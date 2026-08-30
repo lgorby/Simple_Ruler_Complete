@@ -223,6 +223,8 @@
                     <LineBreak/>
                     <Run Text="• Distance is shown in current unit while dragging"/>
                     <LineBreak/>
+                    <Run Text="• The magnifier is on by default here for precise endpoint placement; press M to toggle it"/>
+                    <LineBreak/>
                     <Run Text="• Press Del to clear the line, Esc or right-click to exit"/>
                 </TextBlock>
 
@@ -245,9 +247,35 @@
                     <LineBreak/>
                     <Run Text="• Magnifier appears showing a zoomed view at the configured level"/>
                     <LineBreak/>
+                    <Run Text="• The caption reads &quot;cursor position / ruler length&quot;, e.g. 1750 / 1755 px"/>
+                    <LineBreak/>
                     <Run Text="• Press Ctrl+M to toggle magnifier on/off"/>
                     <LineBreak/>
                     <Run Text="• Right-click → Enable/Disable Magnifier"/>
+                </TextBlock>
+
+                <!-- Closing Section -->
+                <TextBlock Text="Closing the App" Style="{StaticResource SectionTitleStyle}"/>
+                <TextBlock TextWrapping="Wrap" Margin="0,5">
+                    <Run Text="• Use the ✕ button, Ctrl+Q, or Exit on the system-tray icon"/>
+                    <LineBreak/>
+                    <Run Text="• External close requests such as Alt+F4 are ignored, so the ruler is not dismissed by accident mid-measurement"/>
+                    <LineBreak/>
+                    <Run Text="• Signing out or shutting down Windows closes it normally"/>
+                </TextBlock>
+
+                <!-- Edge Snapping Section -->
+                <TextBlock Text="Edge Snapping" Style="{StaticResource SectionTitleStyle}"/>
+                <TextBlock TextWrapping="Wrap" Margin="0,5">
+                    <Run Text="• Press Ctrl+S, or right-click → Enable/Disable Edge Snapping"/>
+                    <LineBreak/>
+                    <Run Text="• While resizing, drag an end to within about 8 pixels of a colour boundary and the ruler edge snaps onto it"/>
+                    <LineBreak/>
+                    <Run Text="• Detection scans just above and below the ruler, so the target needs to extend a little past it"/>
+                    <LineBreak/>
+                    <Run Text="• Applies only when the ruler is horizontal (0° or 180°), since it looks for vertical edges"/>
+                    <LineBreak/>
+                    <Run Text="• Snaps to the visible window edge, which is a few pixels inside the invisible resize border Windows adds"/>
                 </TextBlock>
 
                 <!-- Calibration Section -->
@@ -294,12 +322,16 @@
                     <Run Text="Calibrate your screen for accurate PPI"/>
                     <LineBreak/>
                     <Run Text="• " FontWeight="Bold"/>
+                    <Run Text="What &quot;px&quot; means here: " FontWeight="Bold"/>
+                    <Run Text="real screen pixels, not scaled ones. On a display at 125% a 500 px ruler covers 500 device pixels, so it looks shorter than the same number would in a CSS or design tool measured in logical pixels."/>
+                    <LineBreak/>
+                    <Run Text="• " FontWeight="Bold"/>
                     <Run Text="Can't move ruler: " FontWeight="Bold"/>
                     <Run Text="Ensure you're not in point-to-point mode (press Esc)"/>
                     <LineBreak/>
                     <Run Text="• " FontWeight="Bold"/>
                     <Run Text="Magnifier not appearing: " FontWeight="Bold"/>
-                    <Run Text="Move cursor within 3 pixels of a corner; check if toggle is enabled"/>
+                    <Run Text="Move cursor within 15 pixels of any ruler edge; check the toggle is enabled"/>
                 </TextBlock>
             </StackPanel>
         </ScrollViewer>

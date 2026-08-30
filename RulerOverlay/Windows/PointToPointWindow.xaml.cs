@@ -1,4 +1,5 @@
 using RulerOverlay.Helpers;
+using RulerOverlay.Models;
 using RulerOverlay.ViewModels;
 using System;
 using System.Windows;
@@ -10,6 +11,7 @@ using MouseButton = System.Windows.Input.MouseButton;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using MouseButtonState = System.Windows.Input.MouseButtonState;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using Mouse = System.Windows.Input.Mouse;
 using Point = System.Windows.Point;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
@@ -39,14 +41,17 @@ namespace RulerOverlay.Windows
         /// </summary>
         private (double X, double Y) _dpiScale = (1.0, 1.0);
 
-        public PointToPointWindow(PointToPointViewModel viewModel)
+        public PointToPointWindow(PointToPointViewModel viewModel, int magnifierZoom = RulerDefaults.MagnifierZoom)
         {
             InitializeComponent();
 
             _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
             DataContext = _viewModel;
 
+            Magnifier.ZoomLevel = magnifierZoom;
+
             Loaded += PointToPointWindow_Loaded;
+            Closed += PointToPointWindow_Closed;
         }
 
         private void PointToPointWindow_Loaded(object sender, RoutedEventArgs e)
@@ -58,7 +63,13 @@ namespace RulerOverlay.Windows
             // The overlay must have focus for Esc to close it.
             Activate();
             Focus();
+
+            // Precise endpoint placement is the whole point of this mode, so the
+            // magnifier starts on rather than waiting to be asked for.
+            ShowMagnifier();
         }
+
+        private void PointToPointWindow_Closed(object? sender, EventArgs e) => HideMagnifier();
 
         /// <summary>
         /// Stretches the overlay across every monitor.
@@ -117,6 +128,7 @@ namespace RulerOverlay.Windows
 
             MeasurementCanvas.Children.Add(CreateMarker(position, Brushes.Cyan));
 
+            UpdateMagnifier();
             CaptureMouse();
         }
 
@@ -127,6 +139,8 @@ namespace RulerOverlay.Windows
 
             var position = e.GetPosition(MeasurementCanvas);
             _viewModel.UpdateMeasurement(ToPhysical(position));
+
+            UpdateMagnifier();
 
             if (_measurementLine != null)
             {
@@ -162,6 +176,15 @@ namespace RulerOverlay.Windows
         {
             switch (e.Key)
             {
+                // Ctrl+M matches the ruler; plain M is convenient with a mouse in hand.
+                case Key.M:
+                    if (MagnifierPopup.IsOpen)
+                        HideMagnifier();
+                    else
+                        ShowMagnifier();
+                    e.Handled = true;
+                    break;
+
                 case Key.Escape:
                     Close();
                     e.Handled = true;
@@ -230,6 +253,51 @@ namespace RulerOverlay.Windows
             Canvas.SetLeft(_distanceLabel, midX + LabelOffsetX);
             Canvas.SetTop(_distanceLabel, midY + LabelOffsetY);
         }
+
+        #region Magnifier
+
+        private void ShowMagnifier()
+        {
+            if (!MagnifierPopup.IsOpen)
+            {
+                MagnifierPopup.IsOpen = true;
+                Magnifier.Start();
+            }
+
+            UpdateMagnifier();
+        }
+
+        private void HideMagnifier()
+        {
+            if (!MagnifierPopup.IsOpen)
+                return;
+
+            MagnifierPopup.IsOpen = false;
+            Magnifier.Stop();
+        }
+
+        /// <summary>
+        /// Keeps the magnifier parked away from the cursor and captioned with the
+        /// distance being measured.
+        /// </summary>
+        private void UpdateMagnifier()
+        {
+            if (!MagnifierPopup.IsOpen)
+                return;
+
+            var cursorScreen = PointToScreen(Mouse.GetPosition(this));
+
+            var (x, y) = ScreenHelper.GetOverlayCornerPosition(
+                cursorScreen.X, cursorScreen.Y,
+                RulerDefaults.MagnifierSize, RulerDefaults.MagnifierMargin, _dpiScale.X);
+
+            MagnifierPopup.HorizontalOffset = x;
+            MagnifierPopup.VerticalOffset = y;
+
+            Magnifier.SetCaption(_viewModel.HasMeasurement ? _viewModel.Distance : null);
+        }
+
+        #endregion
 
         private void ClearDrawing()
         {

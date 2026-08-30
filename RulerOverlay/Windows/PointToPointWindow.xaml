@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:controls="clr-namespace:RulerOverlay.Controls"
         mc:Ignorable="d"
         Title="Point-to-Point Measurement"
         WindowStyle="None"
@@ -49,12 +50,22 @@
                            FontSize="12"
                            Margin="0,5,0,0"
                            HorizontalAlignment="Center"/>
-                <TextBlock Text="Del clears the line  •  Esc or right-click exits"
+                <TextBlock Text="M toggles the magnifier  •  Del clears the line  •  Esc or right-click exits"
                            Foreground="#FFDDDDDD"
                            FontSize="11"
                            Margin="0,5,0,0"
                            HorizontalAlignment="Center"/>
             </StackPanel>
         </Border>
+        <!--
+            Magnifier for precise endpoint placement. This is the mode where exact
+            pixel placement matters most, so it is on by default here.
+        -->
+        <Popup x:Name="MagnifierPopup"
+               Placement="Absolute"
+               AllowsTransparency="True"
+               IsOpen="False">
+            <controls:MagnifierControl x:Name="Magnifier"/>
+        </Popup>
     </Grid>
 </Window>
