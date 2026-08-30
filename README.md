@@ -5,7 +5,7 @@ A desktop measurement overlay tool that provides precise on-screen measurements 
 ## Features
 
 - **Precise Measurements**: Display measurements in real screen pixels, inches, or centimeters, correct on high-DPI and scaled displays
-- **Flexible Ruler**: Move, resize, and rotate the ruler to preset angles
+- **Flexible Ruler**: Move, resize from any edge or corner, and rotate freely or to preset angles
 - **Point-to-Point Mode**: Click and drag to measure distances between any two points
 - **Edge Highlighting**: Create temporary visual guides on the ruler
 - **Magnifier**: Zoom in near any ruler edge for precise pixel placement
@@ -163,6 +163,7 @@ Settings include:
 | `Ctrl+S` | Toggle edge snapping |
 | `Ctrl+P` | Enter point-to-point mode |
 | `Ctrl+G` | Clear all edge guides |
+| `Ctrl+K` | Toggle click-through mode |
 | `Ctrl+Q` | Quit application |
 | `Arrows` | Nudge ruler 1px (hold `Shift` for 10px) |
 | `Esc` | Exit point-to-point mode |
@@ -175,14 +176,15 @@ every other application.
 ## Usage
 
 1. **Move the Ruler**: Click and drag anywhere on the ruler body, or nudge it with the arrow keys
-2. **Resize**: Drag the left or right edge of the ruler
-3. **Rotate**: Right-click > Rotation for a preset angle (0°, 45°, 90°, 135°, 180°), or use the ⤾ button to step through them
+2. **Resize**: Drag any edge to change one dimension, or a corner to change both. Left/right edges set the length, top/bottom set the thickness
+3. **Rotate**: Hold **Ctrl** and drag the ruler to spin it to any angle — the live angle is shown while you drag, and holding **Shift** as well snaps to 15° steps. For a fixed angle, right-click > Rotation (0°, 45°, 90°, 135°, 180°) or use the ⤾ button to step through them
 4. **Change Units**: Right-click and select from pixels, inches, or centimeters
 5. **Calibrate**: Right-click > Calibrate Screen, then enter your screen diagonal in inches
 6. **Point-to-Point**: Press Ctrl+P or right-click > Point-to-Point Mode, then click and drag to measure
 7. **Edge Guides**: Shift+click on the ruler to drop a magenta guide; Shift+click a guide to remove it
 8. **Edge Snapping**: Press Ctrl+S, then drag a ruler end to within ~8 px of a colour boundary and it snaps onto it. Works while the ruler is horizontal, and snaps to the *visible* window edge rather than the invisible resize border Windows adds
-9. **Magnifier**: Press Ctrl+M, then move the cursor near a ruler edge. The caption reads `cursor position / ruler length`. In point-to-point mode it is on by default (press M to toggle) and shows the live distance
+9. **Click-Through**: Press **Ctrl+K** to let clicks pass straight through to the window underneath while the ruler stays visible on top. The tray icon is shown while this is on, because a click-through ruler cannot be clicked to switch it back off
+10. **Magnifier**: Press Ctrl+M, then move the cursor near a ruler edge. The caption reads `cursor position / ruler length`. In point-to-point mode it is on by default (press M to toggle) and shows the live distance
 
 ## Closing the App
 
@@ -197,13 +199,13 @@ Implemented and verified: DPI-correct measurement in real screen pixels,
 calibration, pixels/inches/centimeters, preset rotation, edge guides, edge
 snapping, magnifier (ruler and point-to-point), clipboard copy, system tray.
 
-Specified in `CLAUDE.md` but **not** implemented — these are open work, not bugs:
+Free rotation, resize from every edge and corner, and click-through mode are
+implemented and tested.
 
-| Feature | Status |
-|---|---|
-| Free rotation (Ctrl + drag outside the ruler) | not implemented; preset angles only |
-| Resize from corners | not implemented; left/right edges only |
-| Click-through mode | not implemented |
+One deliberate deviation from the spec: it describes free rotation as grabbing
+*just outside* the ruler. The window is only as large as the ruler's own bounding
+box, so there is no "just outside" region to click on. Ctrl already removes any
+ambiguity with dragging to move, so the gesture works anywhere on the ruler body.
 
 `CLAUDE.md` holds the original project specification and is the backlog. It
 describes the intended feature set rather than the current state, so treat any

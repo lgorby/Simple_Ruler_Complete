@@ -195,11 +195,11 @@
                     <LineBreak/>
                     <Run Text="• " FontWeight="Bold"/>
                     <Run Text="Resize: " FontWeight="Bold"/>
-                    <Run Text="Drag from left or right edges"/>
+                    <Run Text="Drag any edge to change one dimension, or a corner to change both"/>
                     <LineBreak/>
                     <Run Text="• " FontWeight="Bold"/>
                     <Run Text="Rotate: " FontWeight="Bold"/>
-                    <Run Text="Right-click → Rotation, or use the ⤴ button to step through 0°, 45°, 90°, 135°, 180°"/>
+                    <Run Text="Hold Ctrl and drag to spin the ruler to any angle; add Shift to snap to 15° steps. Right-click → Rotation, or the ⤴ button, for the presets 0°, 45°, 90°, 135°, 180°"/>
                     <LineBreak/>
                     <Run Text="• " FontWeight="Bold"/>
                     <Run Text="Change Unit: " FontWeight="Bold"/>
@@ -254,6 +254,16 @@
                     <Run Text="• Press Ctrl+M to toggle magnifier on/off"/>
                     <LineBreak/>
                     <Run Text="• Right-click → Enable/Disable Magnifier"/>
+                </TextBlock>
+
+                <!-- Click-Through Section -->
+                <TextBlock Text="Click-Through Mode" Style="{StaticResource SectionTitleStyle}"/>
+                <TextBlock TextWrapping="Wrap" Margin="0,5">
+                    <Run Text="• Press Ctrl+K, or right-click → Enable Click-Through"/>
+                    <LineBreak/>
+                    <Run Text="• The ruler stays visible on top but stops receiving the mouse, so clicks reach the window underneath"/>
+                    <LineBreak/>
+                    <Run Text="• The system-tray icon appears while this is on: a click-through ruler cannot be clicked to switch itself back off, so the tray menu is the way out"/>
                 </TextBlock>
 
                 <!-- Transparency Section -->

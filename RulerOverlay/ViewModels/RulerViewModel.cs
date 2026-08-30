@@ -47,6 +47,7 @@ namespace RulerOverlay.ViewModels
         private int _magnifierZoom = RulerDefaults.MagnifierZoom;
         private bool _magnifierEnabled;
         private bool _edgeSnappingEnabled;
+        private bool _clickThroughEnabled;
         private double _pixelScale = 1.0;
 
         public ObservableCollection<EdgeGuide> EdgeGuides { get; } = new();
@@ -82,6 +83,7 @@ namespace RulerOverlay.ViewModels
             ResetPositionCommand = new RelayCommand(ResetPosition);
             ToggleMagnifierCommand = new RelayCommand(() => MagnifierEnabled = !MagnifierEnabled);
             ToggleEdgeSnappingCommand = new RelayCommand(() => EdgeSnappingEnabled = !EdgeSnappingEnabled);
+            ToggleClickThroughCommand = new RelayCommand(() => ClickThroughEnabled = !ClickThroughEnabled);
             ClearGuidesCommand = new RelayCommand(ClearGuides);
             CopyMeasurementCommand = new RelayCommand(CopyMeasurement);
             CycleOpacityCommand = new RelayCommand(CycleOpacity);
@@ -191,6 +193,17 @@ namespace RulerOverlay.ViewModels
             set => SetPersisted(ref _edgeSnappingEnabled, value);
         }
 
+        /// <summary>
+        /// When set, the ruler ignores the mouse entirely and clicks reach the window
+        /// underneath. The tray icon stays visible while this is on, because a
+        /// click-through ruler cannot be clicked to switch it back off.
+        /// </summary>
+        public bool ClickThroughEnabled
+        {
+            get => _clickThroughEnabled;
+            set => SetPersisted(ref _clickThroughEnabled, value);
+        }
+
         #endregion
 
         #region Computed Properties
@@ -262,6 +275,7 @@ namespace RulerOverlay.ViewModels
                 MagnifierZoom = config.MagnifierZoom;
                 MagnifierEnabled = config.MagnifierEnabled;
                 EdgeSnappingEnabled = config.EdgeSnappingEnabled;
+                ClickThroughEnabled = config.ClickThroughEnabled;
             }
             finally
             {
@@ -293,7 +307,8 @@ namespace RulerOverlay.ViewModels
                 Ppi = _ppi,
                 MagnifierZoom = _magnifierZoom,
                 MagnifierEnabled = _magnifierEnabled,
-                EdgeSnappingEnabled = _edgeSnappingEnabled
+                EdgeSnappingEnabled = _edgeSnappingEnabled,
+                ClickThroughEnabled = _clickThroughEnabled
             });
         }
 
@@ -359,6 +374,9 @@ namespace RulerOverlay.ViewModels
         public ICommand ToggleMagnifierCommand { get; }
 
         public ICommand ToggleEdgeSnappingCommand { get; }
+
+        /// <summary>Toggles whether the ruler passes mouse input through to what is below.</summary>
+        public ICommand ToggleClickThroughCommand { get; }
 
         public ICommand ClearGuidesCommand { get; }
 

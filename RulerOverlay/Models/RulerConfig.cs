@@ -40,6 +40,9 @@ namespace RulerOverlay.Models
         [JsonProperty("edgeSnappingEnabled")]
         public bool EdgeSnappingEnabled { get; set; }
 
+        [JsonProperty("clickThroughEnabled")]
+        public bool ClickThroughEnabled { get; set; }
+
         /// <summary>
         /// Shortcut map. Not currently user-editable through the UI, but it is round-tripped
         /// so hand-edits to config.json survive a save.
@@ -54,6 +57,7 @@ namespace RulerOverlay.Models
             { "toggleTransparency", "Ctrl+T" },
             { "toggleMagnifier", "Ctrl+M" },
             { "toggleSnapping", "Ctrl+S" },
+            { "clickThrough", "Ctrl+K" },
             { "pointToPoint", "Ctrl+P" },
             { "clearGuides", "Ctrl+G" },
             { "quit", "Ctrl+Q" },
@@ -94,6 +98,7 @@ namespace RulerOverlay.Models
                                                     RulerDefaults.MinMagnifierZoom, RulerDefaults.MaxMagnifierZoom),
                 MagnifierEnabled = MagnifierEnabled,
                 EdgeSnappingEnabled = EdgeSnappingEnabled,
+                ClickThroughEnabled = ClickThroughEnabled,
                 Shortcuts = Shortcuts is { Count: > 0 } ? Shortcuts : defaults.Shortcuts
             };
         }

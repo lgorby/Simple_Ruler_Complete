@@ -192,6 +192,13 @@
                       IsCheckable="True"
                       IsChecked="{Binding MagnifierEnabled, Mode=OneWay}"/>
 
+            <!-- Click-Through -->
+            <MenuItem Header="{Binding ClickThroughEnabled, Converter={StaticResource BoolToTextConverter}, ConverterParameter='Enable Click-Through|Disable Click-Through'}"
+                      Command="{Binding ToggleClickThroughCommand}"
+                      InputGestureText="Ctrl+K"
+                      IsCheckable="True"
+                      IsChecked="{Binding ClickThroughEnabled, Mode=OneWay}"/>
+
             <!-- Edge Snapping -->
             <MenuItem Header="{Binding EdgeSnappingEnabled, Converter={StaticResource BoolToTextConverter}, ConverterParameter='Enable Edge Snapping|Disable Edge Snapping'}"
                       Command="{Binding ToggleEdgeSnappingCommand}"
@@ -385,11 +392,14 @@
                                 Style="{StaticResource MiniIconButtonStyle}"/>
                     </StackPanel>
 
-                    <!-- Resize Handles -->
+                    <!--
+                        Resize handles. Edges change one dimension, corners change both.
+                        Corners are declared last so they sit above the edge strips they
+                        overlap and win the hit test.
+                    -->
                     <Rectangle x:Name="LeftResizeHandle"
                                Width="{Binding ResizeHandleWidth}"
                                Fill="Transparent"
-                               Cursor="SizeWE"
                                HorizontalAlignment="Left"
                                MouseDown="LeftResizeHandle_MouseDown"
                                MouseMove="ResizeHandle_MouseMove"
@@ -398,9 +408,60 @@
                     <Rectangle x:Name="RightResizeHandle"
                                Width="{Binding ResizeHandleWidth}"
                                Fill="Transparent"
-                               Cursor="SizeWE"
                                HorizontalAlignment="Right"
                                MouseDown="RightResizeHandle_MouseDown"
+                               MouseMove="ResizeHandle_MouseMove"
+                               MouseUp="ResizeHandle_MouseUp"/>
+
+                    <Rectangle x:Name="TopResizeHandle"
+                               Height="{Binding ResizeHandleWidth}"
+                               Fill="Transparent"
+                               VerticalAlignment="Top"
+                               MouseDown="TopResizeHandle_MouseDown"
+                               MouseMove="ResizeHandle_MouseMove"
+                               MouseUp="ResizeHandle_MouseUp"/>
+
+                    <Rectangle x:Name="BottomResizeHandle"
+                               Height="{Binding ResizeHandleWidth}"
+                               Fill="Transparent"
+                               VerticalAlignment="Bottom"
+                               MouseDown="BottomResizeHandle_MouseDown"
+                               MouseMove="ResizeHandle_MouseMove"
+                               MouseUp="ResizeHandle_MouseUp"/>
+
+                    <Rectangle x:Name="TopLeftResizeHandle"
+                               Width="{Binding ResizeHandleWidth}"
+                               Height="{Binding ResizeHandleWidth}"
+                               Fill="Transparent"
+                               HorizontalAlignment="Left" VerticalAlignment="Top"
+                               MouseDown="TopLeftResizeHandle_MouseDown"
+                               MouseMove="ResizeHandle_MouseMove"
+                               MouseUp="ResizeHandle_MouseUp"/>
+
+                    <Rectangle x:Name="TopRightResizeHandle"
+                               Width="{Binding ResizeHandleWidth}"
+                               Height="{Binding ResizeHandleWidth}"
+                               Fill="Transparent"
+                               HorizontalAlignment="Right" VerticalAlignment="Top"
+                               MouseDown="TopRightResizeHandle_MouseDown"
+                               MouseMove="ResizeHandle_MouseMove"
+                               MouseUp="ResizeHandle_MouseUp"/>
+
+                    <Rectangle x:Name="BottomLeftResizeHandle"
+                               Width="{Binding ResizeHandleWidth}"
+                               Height="{Binding ResizeHandleWidth}"
+                               Fill="Transparent"
+                               HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                               MouseDown="BottomLeftResizeHandle_MouseDown"
+                               MouseMove="ResizeHandle_MouseMove"
+                               MouseUp="ResizeHandle_MouseUp"/>
+
+                    <Rectangle x:Name="BottomRightResizeHandle"
+                               Width="{Binding ResizeHandleWidth}"
+                               Height="{Binding ResizeHandleWidth}"
+                               Fill="Transparent"
+                               HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                               MouseDown="BottomRightResizeHandle_MouseDown"
                                MouseMove="ResizeHandle_MouseMove"
                                MouseUp="ResizeHandle_MouseUp"/>
                 </Grid>
@@ -419,6 +480,20 @@
                AllowsTransparency="True"
                IsOpen="False">
             <controls:ToastControl x:Name="Toast"/>
+        </Popup>
+
+        <!-- Live angle while free-rotating; a popup so it is neither rotated nor clipped -->
+        <Popup x:Name="AngleReadoutPopup"
+               Placement="Absolute"
+               AllowsTransparency="True"
+               IsOpen="False">
+            <Border Background="#DD000000" CornerRadius="3" Padding="8,4"
+                    BorderBrush="Cyan" BorderThickness="1">
+                <TextBlock x:Name="AngleReadoutText"
+                           Foreground="White"
+                           FontSize="13"
+                           FontWeight="Bold"/>
+            </Border>
         </Popup>
 
         <!-- Magnifier popup lives outside RootGrid so ruler rotation does not tilt it -->

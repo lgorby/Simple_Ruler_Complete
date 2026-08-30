@@ -16,6 +16,9 @@ namespace RulerOverlay.Helpers
         public const int WS_EX_LAYERED = 0x00080000;
         public const int WS_EX_TOOLWINDOW = 0x00000080;
 
+        /// <summary>Makes the window invisible to the mouse; clicks land on whatever is beneath.</summary>
+        public const int WS_EX_TRANSPARENT = 0x00000020;
+
         // SetWindowPos flags
         public const uint SWP_NOZORDER = 0x0004;
         public const uint SWP_NOACTIVATE = 0x0010;
