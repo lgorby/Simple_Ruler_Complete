@@ -52,16 +52,33 @@ namespace RulerOverlay.Models
         private static double Brightness(Color color) =>
             (0.299 * color.R + 0.587 * color.G + 0.114 * color.B) / 255.0;
 
+        // Halo colours sit at the extremes so the outline separates the ink from whatever
+        // is behind it, however the ruler colour and the desktop happen to blend.
+        private static readonly Color DarkHalo = Colors.Black;
+        private static readonly Color LightHalo = Colors.White;
+
         /// <summary>True when a ruler colour needs light markings drawn on it.</summary>
         public static bool IsDark(string? name) => Brightness(Resolve(name)) < 0.5;
+
+        /// <summary>Tick and label colour for a given ruler colour.</summary>
+        public static Color ResolveInk(string? name) => IsDark(name) ? LightInk : DarkInk;
+
+        /// <summary>
+        /// Outline colour drawn behind the markings, always the opposite extreme to the ink.
+        ///
+        /// Opacity applies only to the ruler's background, so at low opacity the markings
+        /// effectively sit on the desktop rather than on the ruler colour they were chosen
+        /// for - a white ruler at 20% over a dark window leaves near-black ink on a dark
+        /// backdrop. The halo keeps them readable whatever shows through.
+        /// </summary>
+        public static Color ResolveHalo(string? name) => IsDark(name) ? DarkHalo : LightHalo;
 
         /// <summary>
         /// Colour for tick marks and their labels: near-black on a light ruler, a soft
         /// off-white on a dark one. Pure white is avoided because it glares against the
         /// dark background at full opacity.
         /// </summary>
-        public static Brush CreateInkBrush(string? name) =>
-            Frozen(IsDark(name) ? LightInk : DarkInk);
+        public static Brush CreateInkBrush(string? name) => Frozen(ResolveInk(name));
 
         /// <summary>
         /// Slightly muted colour used for the overall-length caption, so it reads as

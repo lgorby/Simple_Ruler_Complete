@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 
 namespace RulerOverlay.Utils
@@ -27,11 +28,30 @@ namespace RulerOverlay.Utils
         private const double LabelOffsetX = -10;
         private const double TotalLabelFontSize = 11;
 
+        /// <summary>
+        /// Width of the contrasting outline drawn under the tick marks.
+        ///
+        /// Opacity applies only to the ruler's background, so at low opacity the markings sit
+        /// on the desktop rather than on the ruler colour they were picked to contrast with.
+        /// The outline is what keeps them readable whatever shows through. Kept narrow so
+        /// adjacent millimetre ticks do not merge into a band.
+        /// </summary>
+        private const double TickHaloThickness = 2.5;
+
+        /// <summary>Width of the outline drawn around label glyphs.</summary>
+        private const double TextHaloThickness = 2.5;
+
         /// <summary>Width reserved at the right end for the overall-length caption.</summary>
         private const double TotalLabelWidth = 55;
 
         /// <summary>Extra clearance so a tick label never collides with that caption.</summary>
         private const double TotalLabelClearance = 10;
+
+        /// <summary>
+        /// Glyph geometry is built in the canvas's own units, which are already real screen
+        /// pixels, so no further DPI scaling is applied here.
+        /// </summary>
+        private const double LabelDpi = 1.0;
 
         private static readonly MeasurementEngine TotalLabelEngine = new();
 
@@ -41,6 +61,7 @@ namespace RulerOverlay.Utils
         private static string? _cachedColorName;
         private static Brush _inkBrush = RulerColors.CreateInkBrush(RulerDefaults.Color);
         private static Brush _accentBrush = RulerColors.CreateAccentBrush(RulerDefaults.Color);
+        private static Brush _haloBrush = Frozen(RulerColors.ResolveHalo(RulerDefaults.Color));
 
         private static void UseColor(string? colorName)
         {
@@ -50,6 +71,14 @@ namespace RulerOverlay.Utils
             _cachedColorName = colorName;
             _inkBrush = RulerColors.CreateInkBrush(colorName);
             _accentBrush = RulerColors.CreateAccentBrush(colorName);
+            _haloBrush = Frozen(RulerColors.ResolveHalo(colorName));
+        }
+
+        private static Brush Frozen(Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
         }
 
         /// <summary>
@@ -199,6 +228,16 @@ namespace RulerOverlay.Utils
 
             geometry.Freeze();
 
+            // Outline first, ink over it. A wider stroke of the opposite tone underneath
+            // gives a crisp edge on any backdrop; a blurred glow smears 1px ticks instead.
+            canvas.Children.Add(new Path
+            {
+                Data = geometry,
+                Stroke = _haloBrush,
+                StrokeThickness = TickHaloThickness,
+                SnapsToDevicePixels = true
+            });
+
             canvas.Children.Add(new Path
             {
                 Data = geometry,
@@ -247,14 +286,7 @@ namespace RulerOverlay.Utils
         private static void DrawTopLabel(Canvas canvas, string text, double x, double topTickHeight,
                                          int rotation, double pixelScale)
         {
-            var label = new TextBlock
-            {
-                Text = text,
-                FontSize = LabelFontSize * pixelScale,
-                Foreground = _inkBrush,
-                RenderTransformOrigin = new Point(0.5, 0.5)
-            };
-
+            var label = CreateOutlinedText(text, LabelFontSize * pixelScale, _inkBrush, FontWeights.Normal);
             ApplyCounterRotation(label, rotation);
 
             Canvas.SetLeft(label, x + LabelOffsetX * pixelScale);
@@ -273,14 +305,11 @@ namespace RulerOverlay.Utils
             // avoids an allocation on every redraw.
             TotalLabelEngine.Ppi = ppi;
 
-            var label = new TextBlock
-            {
-                Text = TotalLabelEngine.Format(width, unit),
-                FontSize = TotalLabelFontSize * pixelScale,
-                FontWeight = FontWeights.Bold,
-                Foreground = _accentBrush,
-                RenderTransformOrigin = new Point(0.5, 0.5)
-            };
+            var label = CreateOutlinedText(
+                TotalLabelEngine.Format(width, unit),
+                TotalLabelFontSize * pixelScale,
+                _accentBrush,
+                FontWeights.Bold);
 
             ApplyCounterRotation(label, rotation);
 
@@ -290,10 +319,56 @@ namespace RulerOverlay.Utils
         }
 
         /// <summary>
+        /// Builds a text label as filled glyph geometry with a contrasting outline around it.
+        ///
+        /// A plain TextBlock is legible only against the backdrop its colour was chosen for.
+        /// Because opacity applies to the ruler's background alone, at low opacity the label
+        /// is effectively sitting on the desktop, and near-black digits over a dark window
+        /// simply vanish. Outlining the glyphs guarantees an edge whatever is behind them,
+        /// and unlike a blurred glow it stays sharp at these small sizes.
+        /// </summary>
+        private static Canvas CreateOutlinedText(string text, double fontSize, Brush fill, FontWeight weight)
+        {
+            var formatted = new FormattedText(
+                text,
+                CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight,
+                new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, weight, FontStretches.Normal),
+                fontSize,
+                fill,
+                LabelDpi);
+
+            var geometry = formatted.BuildGeometry(new Point(0, 0));
+            geometry.Freeze();
+
+            // Outline underneath, glyph fill on top, so the stroke never eats into the
+            // letterforms the way a single stroked-and-filled path would.
+            var host = new Canvas();
+
+            host.Children.Add(new Path
+            {
+                Data = geometry,
+                Stroke = _haloBrush,
+                StrokeThickness = TextHaloThickness,
+                StrokeLineJoin = PenLineJoin.Round
+            });
+
+            host.Children.Add(new Path
+            {
+                Data = geometry,
+                Fill = fill
+            });
+
+            return host;
+        }
+
+        /// <summary>
         /// Rotates a label against the ruler's own rotation so text always reads horizontally.
         /// </summary>
-        private static void ApplyCounterRotation(UIElement element, int rotation)
+        private static void ApplyCounterRotation(FrameworkElement element, int rotation)
         {
+            element.RenderTransformOrigin = new Point(0.5, 0.5);
+
             if (RulerDefaults.NormalizeRotation(rotation) == 0)
                 return;
 
