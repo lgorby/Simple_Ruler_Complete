@@ -258,6 +258,9 @@ namespace RulerOverlay.Windows
             {
                 case nameof(RulerViewModel.Unit):
                 case nameof(RulerViewModel.Ppi):
+                // The markings are drawn in a shade that contrasts with the ruler colour,
+                // so they have to be repainted when that colour changes.
+                case nameof(RulerViewModel.Color):
                     RenderMarkings();
                     break;
 
@@ -292,7 +295,8 @@ namespace RulerOverlay.Windows
                 _viewModel.Unit,
                 _viewModel.Ppi,
                 _viewModel.Rotation,
-                _pixelScale);
+                _pixelScale,
+                _viewModel.Color);
         }
 
         /// <summary>
