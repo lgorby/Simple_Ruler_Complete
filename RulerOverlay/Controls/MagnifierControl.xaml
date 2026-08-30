@@ -18,45 +18,59 @@
                    RenderOptions.BitmapScalingMode="NearestNeighbor"/>
 
             <!--
-                Open reticle. The crosshair is split into four segments and the centre marker
-                is a hollow circle, so the pixel under the cursor - the whole reason to
-                magnify - is never painted over. A solid dot or an unbroken crosshair hides
-                exactly what the user is trying to read.
+                Open reticle, sized in real device pixels.
 
-                Built from a 3x3 grid rather than fixed coordinates so it stays centred if
-                the magnifier size changes; the middle cell is the clear zone.
+                Every stroke is one physical pixel: a WPF "1" is one device-independent
+                pixel, which on a scaled display is a fraction of a device pixel and gets
+                antialiased across two, so nothing lines up with what is being measured.
+                EdgeMode=Aliased plus a thickness of 1/DPI keeps each line exactly one
+                pixel and perfectly crisp.
+
+                The square marks the single source pixel under the cursor. It is offset by
+                half a magnified pixel because the capture centres the cursor's pixel at
+                the image's midpoint, which is that pixel's leading EDGE - without the
+                shift the crosshair marks the corner between four pixels rather than one.
+
+                Metrics are applied in code-behind, where the zoom level and DPI are known.
             -->
-            <Grid>
+            <Grid x:Name="Reticle"
+                  RenderOptions.EdgeMode="Aliased"
+                  UseLayoutRounding="True">
+                <Grid.RenderTransform>
+                    <TranslateTransform x:Name="ReticleOffset"/>
+                </Grid.RenderTransform>
+
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="18"/>
+                    <ColumnDefinition x:Name="ReticleGapColumn" Width="18"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="*"/>
-                    <RowDefinition Height="18"/>
+                    <RowDefinition x:Name="ReticleGapRow" Height="18"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Crosshair arms, stopping at the edge of the clear centre -->
-                <Rectangle Grid.Row="0" Grid.Column="1" Width="1" Fill="Red" Opacity="0.75"
+                <!-- Crosshair arms, stopping clear of the marked pixel -->
+                <Rectangle x:Name="CrosshairTop" Grid.Row="0" Grid.Column="1"
+                           Fill="Red" Opacity="0.75"
                            HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
-                <Rectangle Grid.Row="2" Grid.Column="1" Width="1" Fill="Red" Opacity="0.75"
+                <Rectangle x:Name="CrosshairBottom" Grid.Row="2" Grid.Column="1"
+                           Fill="Red" Opacity="0.75"
                            HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
-                <Rectangle Grid.Row="1" Grid.Column="0" Height="1" Fill="Red" Opacity="0.75"
+                <Rectangle x:Name="CrosshairLeft" Grid.Row="1" Grid.Column="0"
+                           Fill="Red" Opacity="0.75"
                            HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
-                <Rectangle Grid.Row="1" Grid.Column="2" Height="1" Fill="Red" Opacity="0.75"
+                <Rectangle x:Name="CrosshairRight" Grid.Row="1" Grid.Column="2"
+                           Fill="Red" Opacity="0.75"
                            HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
 
-                <!-- Hollow centre marker: outlined, never filled -->
-                <Ellipse Grid.Row="1" Grid.Column="1"
-                         Width="14" Height="14"
-                         Fill="Transparent"
-                         Stroke="Red"
-                         StrokeThickness="1"
-                         Opacity="0.9"
-                         HorizontalAlignment="Center"
-                         VerticalAlignment="Center"/>
+                <!-- Outline of the exact source pixel under the cursor -->
+                <Rectangle x:Name="PixelMarker" Grid.Row="1" Grid.Column="1"
+                           Fill="Transparent"
+                           Stroke="Red"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
             </Grid>
 
             <!-- Position along the ruler, in the active unit -->

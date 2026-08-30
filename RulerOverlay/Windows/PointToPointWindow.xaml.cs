@@ -72,6 +72,7 @@ namespace RulerOverlay.Windows
         private void PointToPointWindow_Loaded(object sender, RoutedEventArgs e)
         {
             _dpiScale = ScreenHelper.GetDpiScale(this);
+            Magnifier.PixelScale = _dpiScale.X;
 
             CoverVirtualDesktop();
 
