@@ -1,94 +1,89 @@
 using RulerOverlay.Helpers;
 using System;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
-using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
 namespace RulerOverlay.Services
 {
     /// <summary>
-    /// Service for capturing screen areas using Win32 BitBlt
-    /// Used by magnifier to capture and display screen pixels
+    /// Captures rectangular areas of the screen with Win32 BitBlt.
+    /// Used by the magnifier and by edge detection.
     /// </summary>
     public class ScreenCaptureService
     {
         /// <summary>
-        /// Captures a rectangular area of the screen
+        /// Captures a screen region.
         /// </summary>
-        /// <param name="x">Left coordinate</param>
-        /// <param name="y">Top coordinate</param>
-        /// <param name="width">Width in pixels</param>
-        /// <param name="height">Height in pixels</param>
-        /// <returns>BitmapSource of captured area</returns>
+        /// <param name="x">Left coordinate, in physical screen pixels.</param>
+        /// <param name="y">Top coordinate, in physical screen pixels.</param>
+        /// <param name="width">Width in physical pixels.</param>
+        /// <param name="height">Height in physical pixels.</param>
+        /// <returns>A frozen bitmap of the region, or null if the capture failed.</returns>
         public BitmapSource? CaptureScreenArea(int x, int y, int width, int height)
         {
+            if (width <= 0 || height <= 0)
+                return null;
+
+            IntPtr screenDc = IntPtr.Zero;
+            IntPtr memDc = IntPtr.Zero;
+            IntPtr hBitmap = IntPtr.Zero;
+            IntPtr oldBitmap = IntPtr.Zero;
+
+            // Every GDI object is released in the finally block, so no handle leaks
+            // even when a step fails or an exception unwinds the method.
             try
             {
-                // Get screen DC
-                IntPtr screenDc = Win32Helper.GetDC(IntPtr.Zero);
+                screenDc = Win32Helper.GetDC(IntPtr.Zero);
                 if (screenDc == IntPtr.Zero)
                     return null;
 
-                // Create compatible DC
-                IntPtr memDc = Win32Helper.CreateCompatibleDC(screenDc);
+                memDc = Win32Helper.CreateCompatibleDC(screenDc);
                 if (memDc == IntPtr.Zero)
-                {
-                    Win32Helper.ReleaseDC(IntPtr.Zero, screenDc);
                     return null;
-                }
 
-                // Create compatible bitmap
-                IntPtr hBitmap = Win32Helper.CreateCompatibleBitmap(screenDc, width, height);
+                hBitmap = Win32Helper.CreateCompatibleBitmap(screenDc, width, height);
                 if (hBitmap == IntPtr.Zero)
-                {
-                    Win32Helper.DeleteDC(memDc);
-                    Win32Helper.ReleaseDC(IntPtr.Zero, screenDc);
                     return null;
-                }
 
-                // Select bitmap into DC
-                IntPtr oldBitmap = Win32Helper.SelectObject(memDc, hBitmap);
+                oldBitmap = Win32Helper.SelectObject(memDc, hBitmap);
 
-                // Copy screen to bitmap
-                bool success = Win32Helper.BitBlt(
+                bool copied = Win32Helper.BitBlt(
                     memDc, 0, 0, width, height,
                     screenDc, x, y,
-                    Win32Helper.SRCCOPY
-                );
+                    Win32Helper.SRCCOPY);
 
-                if (!success)
-                {
-                    Win32Helper.SelectObject(memDc, oldBitmap);
-                    Win32Helper.DeleteObject(hBitmap);
-                    Win32Helper.DeleteDC(memDc);
-                    Win32Helper.ReleaseDC(IntPtr.Zero, screenDc);
+                if (!copied)
                     return null;
-                }
 
-                // Convert HBITMAP to BitmapSource
-                BitmapSource bitmapSource = Imaging.CreateBitmapSourceFromHBitmap(
+                var bitmapSource = Imaging.CreateBitmapSourceFromHBitmap(
                     hBitmap,
                     IntPtr.Zero,
                     Int32Rect.Empty,
-                    BitmapSizeOptions.FromEmptyOptions()
-                );
+                    BitmapSizeOptions.FromEmptyOptions());
 
-                // Freeze for better performance
+                // Freezing makes the bitmap safe to hand to the UI and cheaper to render.
                 bitmapSource.Freeze();
-
-                // Cleanup
-                Win32Helper.SelectObject(memDc, oldBitmap);
-                Win32Helper.DeleteObject(hBitmap);
-                Win32Helper.DeleteDC(memDc);
-                Win32Helper.ReleaseDC(IntPtr.Zero, screenDc);
-
                 return bitmapSource;
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[ScreenCaptureService] Capture failed: {ex.Message}");
                 return null;
+            }
+            finally
+            {
+                if (memDc != IntPtr.Zero && oldBitmap != IntPtr.Zero)
+                    Win32Helper.SelectObject(memDc, oldBitmap);
+
+                if (hBitmap != IntPtr.Zero)
+                    Win32Helper.DeleteObject(hBitmap);
+
+                if (memDc != IntPtr.Zero)
+                    Win32Helper.DeleteDC(memDc);
+
+                if (screenDc != IntPtr.Zero)
+                    Win32Helper.ReleaseDC(IntPtr.Zero, screenDc);
             }
         }
     }

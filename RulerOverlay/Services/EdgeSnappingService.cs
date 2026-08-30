@@ -1,146 +1,157 @@
 using System;
-using System.Collections.Generic;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using Point = System.Windows.Point;
-using Color = System.Windows.Media.Color;
 
 namespace RulerOverlay.Services
 {
     /// <summary>
-    /// Service for detecting color boundaries on screen for edge snapping
-    /// Ports logic from src/services/EdgeSnapping.ts
+    /// Detects strong vertical colour boundaries on screen so a ruler edge can snap to them.
+    ///
+    /// Rather than returning every pixel that differs from its neighbour (which is mostly
+    /// noise, e.g. antialiased text), each candidate column is scored by how many sampled
+    /// rows show a colour change there. A real UI border produces a change down most of the
+    /// column, while text and gradients do not.
     /// </summary>
     public class EdgeSnappingService
     {
+        /// <summary>Per-channel RGB distance at which two neighbouring pixels count as an edge.</summary>
+        private const double ColorThreshold = 30.0;
+
+        /// <summary>How far either side of the requested position to look, in physical pixels.</summary>
+        public const int SnapTolerance = 8;
+
+        /// <summary>Fraction of sampled rows that must agree before a column is treated as an edge.</summary>
+        private const double MinColumnAgreement = 0.6;
+
+        /// <summary>Rows are sampled rather than read exhaustively, to keep this cheap during a drag.</summary>
+        private const int MaxSampledRows = 40;
+
         private readonly ScreenCaptureService _screenCapture;
-        private const int ColorThreshold = 30; // Color difference threshold for edge detection
-        private const int SnapTolerance = 5; // Pixels within which to snap
 
-        public EdgeSnappingService()
+        public EdgeSnappingService(ScreenCaptureService? screenCapture = null)
         {
-            _screenCapture = new ScreenCaptureService();
+            _screenCapture = screenCapture ?? new ScreenCaptureService();
         }
 
         /// <summary>
-        /// Finds snap points near the left edge of the ruler
+        /// Finds the nearest strong vertical edge to <paramref name="physicalX"/>.
+        /// All coordinates are physical screen pixels.
         /// </summary>
-        public List<Point> FindLeftEdgeSnapPoints(int x, int y, int height)
+        /// <param name="physicalX">Screen X the ruler edge currently sits at.</param>
+        /// <param name="physicalTop">Top of the band to scan.</param>
+        /// <param name="physicalHeight">Height of the band to scan.</param>
+        /// <returns>The screen X to snap to, or null when nothing convincing is nearby.</returns>
+        public double? FindNearestVerticalEdge(double physicalX, double physicalTop, int physicalHeight)
         {
-            return FindVerticalEdgeSnapPoints(x - 10, y, 20, height);
-        }
-
-        /// <summary>
-        /// Finds snap points near the right edge of the ruler
-        /// </summary>
-        public List<Point> FindRightEdgeSnapPoints(int x, int y, int height)
-        {
-            return FindVerticalEdgeSnapPoints(x - 10, y, 20, height);
-        }
-
-        /// <summary>
-        /// Finds vertical edges in a screen area
-        /// </summary>
-        private List<Point> FindVerticalEdgeSnapPoints(int x, int y, int width, int height)
-        {
-            var snapPoints = new List<Point>();
-
-            try
-            {
-                // Capture screen area
-                var captured = _screenCapture.CaptureScreenArea(x, y, width, height);
-                if (captured == null)
-                    return snapPoints;
-
-                // Convert to byte array for pixel analysis
-                var pixels = GetPixelArray(captured);
-                if (pixels == null)
-                    return snapPoints;
-
-                int stride = width * 4; // BGRA format
-
-                // Scan for vertical edges
-                for (int pixelY = 0; pixelY < height; pixelY++)
-                {
-                    for (int pixelX = 1; pixelX < width; pixelX++)
-                    {
-                        int offset1 = pixelY * stride + (pixelX - 1) * 4;
-                        int offset2 = pixelY * stride + pixelX * 4;
-
-                        // Get colors of adjacent pixels
-                        var color1 = Color.FromRgb(pixels[offset1 + 2], pixels[offset1 + 1], pixels[offset1]);
-                        var color2 = Color.FromRgb(pixels[offset2 + 2], pixels[offset2 + 1], pixels[offset2]);
-
-                        // Check if colors differ significantly (edge detected)
-                        if (GetColorDifference(color1, color2) > ColorThreshold)
-                        {
-                            snapPoints.Add(new Point(x + pixelX, y + pixelY));
-                        }
-                    }
-                }
-            }
-            catch
-            {
-                // Ignore errors during edge detection
-            }
-
-            return snapPoints;
-        }
-
-        /// <summary>
-        /// Finds the closest snap point to a target position
-        /// </summary>
-        public Point? FindClosestSnapPoint(List<Point> snapPoints, Point target)
-        {
-            if (snapPoints.Count == 0)
+            if (physicalHeight <= 1)
                 return null;
 
-            Point? closest = null;
-            double minDistance = double.MaxValue;
+            // Scan a band centred on the requested position. One extra column on the left
+            // gives every candidate column a left-hand neighbour to compare against.
+            int bandWidth = SnapTolerance * 2 + 2;
+            int bandLeft = (int)Math.Round(physicalX) - SnapTolerance - 1;
+            int bandTop = (int)Math.Round(physicalTop);
 
-            foreach (var point in snapPoints)
+            var captured = _screenCapture.CaptureScreenArea(bandLeft, bandTop, bandWidth, physicalHeight);
+            if (captured == null)
+                return null;
+
+            var pixels = TryGetBgraPixels(captured, out int stride);
+            if (pixels == null)
+                return null;
+
+            int width = captured.PixelWidth;
+            int height = captured.PixelHeight;
+            if (width < 2 || height < 1)
+                return null;
+
+            // Sample evenly spaced rows instead of all of them.
+            int rowStep = Math.Max(1, height / MaxSampledRows);
+            int sampledRows = 0;
+            for (int y = 0; y < height; y += rowStep)
+                sampledRows++;
+
+            if (sampledRows == 0)
+                return null;
+
+            int requiredHits = (int)Math.Ceiling(sampledRows * MinColumnAgreement);
+            double? bestX = null;
+            int bestScore = 0;
+            double bestDistance = double.MaxValue;
+
+            for (int column = 1; column < width; column++)
             {
-                double distance = Math.Abs(point.X - target.X);
-                if (distance < minDistance && distance <= SnapTolerance)
+                int hits = 0;
+
+                for (int y = 0; y < height; y += rowStep)
                 {
-                    minDistance = distance;
-                    closest = point;
+                    int rowOffset = y * stride;
+                    int left = rowOffset + (column - 1) * 4;
+                    int right = rowOffset + column * 4;
+
+                    if (GetColorDistance(pixels, left, right) > ColorThreshold)
+                        hits++;
+                }
+
+                if (hits < requiredHits)
+                    continue;
+
+                double candidateX = bandLeft + column;
+                double distance = Math.Abs(candidateX - physicalX);
+
+                if (distance > SnapTolerance)
+                    continue;
+
+                // The nearest qualifying column wins, with strength only breaking ties.
+                // Preferring the strongest instead lets a marginally crisper boundary a few
+                // pixels further away beat the one the user is plainly aiming at, which
+                // reads as the snap missing.
+                if (distance < bestDistance || (distance == bestDistance && hits > bestScore))
+                {
+                    bestScore = hits;
+                    bestDistance = distance;
+                    bestX = candidateX;
                 }
             }
 
-            return closest;
+            return bestX;
         }
 
         /// <summary>
-        /// Calculates color difference between two colors
+        /// Euclidean RGB distance between two BGRA pixels in the same buffer.
         /// </summary>
-        private double GetColorDifference(Color c1, Color c2)
+        private static double GetColorDistance(byte[] pixels, int offsetA, int offsetB)
         {
-            int rDiff = Math.Abs(c1.R - c2.R);
-            int gDiff = Math.Abs(c1.G - c2.G);
-            int bDiff = Math.Abs(c1.B - c2.B);
+            int bDiff = pixels[offsetA] - pixels[offsetB];
+            int gDiff = pixels[offsetA + 1] - pixels[offsetB + 1];
+            int rDiff = pixels[offsetA + 2] - pixels[offsetB + 2];
 
-            return Math.Sqrt(rDiff * rDiff + gDiff * gDiff + bDiff * bDiff);
+            return Math.Sqrt((double)rDiff * rDiff + (double)gDiff * gDiff + (double)bDiff * bDiff);
         }
 
         /// <summary>
-        /// Converts BitmapSource to byte array for pixel analysis
+        /// Copies a bitmap into a 32-bit BGRA buffer.
+        /// Converts first when the source is not already 32bpp, so the 4-bytes-per-pixel
+        /// arithmetic above is always valid.
         /// </summary>
-        private byte[]? GetPixelArray(BitmapSource source)
+        private static byte[]? TryGetBgraPixels(BitmapSource source, out int stride)
         {
+            stride = 0;
+
             try
             {
-                int width = source.PixelWidth;
-                int height = source.PixelHeight;
-                int stride = width * 4; // BGRA format
-                byte[] pixels = new byte[height * stride];
+                BitmapSource bgra = source.Format == PixelFormats.Bgra32 || source.Format == PixelFormats.Bgr32
+                    ? source
+                    : new FormatConvertedBitmap(source, PixelFormats.Bgra32, null, 0);
 
-                source.CopyPixels(pixels, stride, 0);
-
+                stride = bgra.PixelWidth * 4;
+                var pixels = new byte[stride * bgra.PixelHeight];
+                bgra.CopyPixels(pixels, stride, 0);
                 return pixels;
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"[EdgeSnappingService] Pixel read failed: {ex.Message}");
                 return null;
             }
         }

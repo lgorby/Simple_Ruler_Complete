@@ -1,4 +1,4 @@
-<Window x:Class="RulerOverlay.Windows.PointToPointWindow"
+﻿<Window x:Class="RulerOverlay.Windows.PointToPointWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -11,21 +11,24 @@
         Topmost="True"
         ShowInTaskbar="False"
         ResizeMode="NoResize"
-        WindowState="Maximized"
+        WindowStartupLocation="Manual"
+        Focusable="True"
         Cursor="Cross"
         MouseDown="Window_MouseDown"
         MouseMove="Window_MouseMove"
         MouseUp="Window_MouseUp"
         KeyDown="Window_KeyDown">
 
+    <!--
+        Bounds are set in code-behind to span the whole virtual desktop.
+        WindowState="Maximized" would only cover the monitor the window opens on.
+    -->
     <Grid>
         <!-- Semi-transparent background overlay -->
         <Rectangle Fill="Black" Opacity="0.15"/>
 
-        <!-- Measurement Line Canvas -->
-        <Canvas x:Name="MeasurementCanvas">
-            <!-- Measurement line will be drawn here in code-behind -->
-        </Canvas>
+        <!-- Measurement line, markers and distance label are drawn here in code-behind -->
+        <Canvas x:Name="MeasurementCanvas" Background="Transparent"/>
 
         <!-- Instructions Overlay -->
         <Border VerticalAlignment="Top"
@@ -33,19 +36,20 @@
                 Margin="0,20,0,0"
                 Background="#CC000000"
                 Padding="20,10"
-                CornerRadius="3">
+                CornerRadius="3"
+                IsHitTestVisible="False">
             <StackPanel>
                 <TextBlock Text="Point-to-Point Measurement Mode"
                            Foreground="White"
                            FontSize="16"
                            FontWeight="Bold"
                            HorizontalAlignment="Center"/>
-                <TextBlock Text="Click and drag to measure distance between two points"
+                <TextBlock Text="Click and drag to measure the distance between two points"
                            Foreground="White"
                            FontSize="12"
                            Margin="0,5,0,0"
                            HorizontalAlignment="Center"/>
-                <TextBlock Text="Press Esc to exit"
+                <TextBlock Text="Del clears the line  •  Esc or right-click exits"
                            Foreground="#FFDDDDDD"
                            FontSize="11"
                            Margin="0,5,0,0"

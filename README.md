@@ -5,7 +5,7 @@ A desktop measurement overlay tool that provides precise on-screen measurements 
 ## Features
 
 - **Precise Measurements**: Display measurements in pixels, inches, or centimeters
-- **Flexible Ruler**: Move, resize, and rotate the ruler to any angle
+- **Flexible Ruler**: Move, resize, and rotate the ruler to preset angles
 - **Point-to-Point Mode**: Click and drag to measure distances between any two points
 - **Edge Highlighting**: Create temporary visual guides on the ruler
 - **Magnifier**: Zoom in on ruler corners for precise pixel measurements
@@ -69,10 +69,11 @@ ruler-overlay/
 │   │   ├── ConfigurationService.cs
 │   │   ├── ClipboardService.cs
 │   │   ├── EdgeSnappingService.cs
-│   │   ├── GlobalHotkeyService.cs
 │   │   └── ScreenCaptureService.cs
-│   ├── Models/                # Data models
+│   ├── Models/                # Data models and shared constants
 │   │   ├── RulerConfig.cs
+│   │   ├── RulerDefaults.cs   # single source of truth for defaults/limits
+│   │   ├── RulerColors.cs
 │   │   ├── MeasurementUnit.cs
 │   │   └── EdgeGuide.cs
 │   ├── Controls/              # Custom WPF controls
@@ -82,6 +83,7 @@ ruler-overlay/
 │   │   └── MenuConverters.cs
 │   ├── Helpers/               # Utility classes
 │   │   ├── DpiHelper.cs
+│   │   ├── ScreenHelper.cs    # DPI + multi-monitor geometry
 │   │   └── Win32Helper.cs
 │   ├── Utils/                 # Rendering utilities
 │   │   └── RulerRenderer.cs
@@ -112,7 +114,7 @@ The executable can be run from any location without installation.
 
 All settings are stored in a JSON config file located in the Windows AppData folder:
 ```
-%APPDATA%/ruler-overlay/config.json
+%APPDATA%\RulerOverlay\config.json
 ```
 
 Settings include:
@@ -133,18 +135,25 @@ Settings include:
 | `Ctrl+M` | Toggle magnifier |
 | `Ctrl+S` | Toggle edge snapping |
 | `Ctrl+P` | Enter point-to-point mode |
+| `Ctrl+G` | Clear all edge guides |
 | `Ctrl+Q` | Quit application |
+| `Arrows` | Nudge ruler 1px (hold `Shift` for 10px) |
 | `Esc` | Exit point-to-point mode |
 | `F1` | Show help dialog |
 
+Shortcuts are active while the ruler window has focus. They are deliberately not
+registered as system-wide hotkeys, which would take over `Ctrl+C` and friends in
+every other application.
+
 ## Usage
 
-1. **Move the Ruler**: Click and drag anywhere on the ruler body
-2. **Resize**: Drag from edges or corners
-3. **Rotate**: Right-click for preset angles or hold Ctrl and drag outside the ruler for free rotation
+1. **Move the Ruler**: Click and drag anywhere on the ruler body, or nudge it with the arrow keys
+2. **Resize**: Drag the left or right edge of the ruler
+3. **Rotate**: Right-click > Rotation for a preset angle (0°, 45°, 90°, 135°, 180°), or use the ⤾ button to step through them
 4. **Change Units**: Right-click and select from pixels, inches, or centimeters
-5. **Calibrate**: Right-click > Calibration > Enter your screen diagonal in inches
+5. **Calibrate**: Right-click > Calibrate Screen, then enter your screen diagonal in inches
 6. **Point-to-Point**: Press Ctrl+P or right-click > Point-to-Point Mode, then click and drag to measure
+7. **Edge Guides**: Shift+click on the ruler to drop a magenta guide; Shift+click a guide to remove it
 
 ## License
 

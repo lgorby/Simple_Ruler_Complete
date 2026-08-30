@@ -1,149 +1,138 @@
 using CommunityToolkit.Mvvm.Input;
+using RulerOverlay.Helpers;
 using RulerOverlay.Models;
 using RulerOverlay.Services;
 using System;
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Brush = System.Windows.Media.Brush;
-using Brushes = System.Windows.Media.Brushes;
-using Colors = System.Windows.Media.Colors;
-using SolidColorBrush = System.Windows.Media.SolidColorBrush;
+using Drawing = System.Drawing;
 
 namespace RulerOverlay.ViewModels
 {
     /// <summary>
-    /// ViewModel for the main ruler window
-    /// Manages all ruler state and configuration
+    /// ViewModel for the main ruler window. Owns all persisted ruler state.
     /// </summary>
-    public class RulerViewModel : ViewModelBase
+    public class RulerViewModel : ViewModelBase, IDisposable
     {
         private readonly ConfigurationService _configService;
         private readonly MeasurementEngine _measurementEngine;
 
         /// <summary>
-        /// Event raised when measurement should be copied to clipboard
+        /// Config writes are batched behind this timer. Dragging or nudging the ruler
+        /// changes position on every mouse move; without debouncing that would rewrite
+        /// config.json hundreds of times a second.
         /// </summary>
+        private readonly DispatcherTimer _saveTimer;
+
+        private bool _isLoading;
+        private bool _savePending;
+        private bool _disposed;
+
+        private Brush? _cachedBackgroundBrush;
+
+        /// <summary>Raised after a measurement has been placed on the clipboard.</summary>
         public event EventHandler<string>? MeasurementCopied;
 
-        private int _width = 500;
-        private int _height = 90;
-        private int _positionX = 0;
-        private int _positionY = 0;
-        private int _rotation = 0;
-        private int _opacity = 100;
-        private string _color = "white";
-        private string _unit = "pixels";
-        private int _ppi = 96;
-        private int _magnifierZoom = 4;
-        private bool _magnifierEnabled = false;
-        private bool _edgeSnappingEnabled = false;
+        private int _width = RulerDefaults.Width;
+        private int _height = RulerDefaults.Height;
+        private int _positionX;
+        private int _positionY;
+        private int _rotation = RulerDefaults.Rotation;
+        private int _opacity = RulerDefaults.Opacity;
+        private string _color = RulerDefaults.Color;
+        private MeasurementUnit _unit = RulerDefaults.Unit;
+        private int _ppi = RulerDefaults.Ppi;
+        private int _magnifierZoom = RulerDefaults.MagnifierZoom;
+        private bool _magnifierEnabled;
+        private bool _edgeSnappingEnabled;
+        private double _pixelScale = 1.0;
 
-        public ObservableCollection<EdgeGuide> EdgeGuides { get; } = new ObservableCollection<EdgeGuide>();
+        public ObservableCollection<EdgeGuide> EdgeGuides { get; } = new();
 
         public RulerViewModel(ConfigurationService configService)
         {
-            _configService = configService;
+            _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _measurementEngine = new MeasurementEngine(_ppi);
 
-            // Initialize commands
-            SetRotationCommand = new RelayCommand<string>(angle =>
+            _saveTimer = new DispatcherTimer { Interval = RulerDefaults.ConfigSaveDebounce };
+            _saveTimer.Tick += (_, _) => FlushPendingSave();
+
+            SetRotationCommand = new RelayCommand<string>(value =>
             {
-                if (int.TryParse(angle, out int value))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Setting rotation to {value}°");
-                    Rotation = value;
-                }
+                if (int.TryParse(value, out int angle))
+                    Rotation = angle;
             });
+
+            SetUnitCommand = new RelayCommand<string>(value => Unit = MeasurementUnits.Parse(value));
+
+            SetOpacityCommand = new RelayCommand<string>(value =>
+            {
+                if (int.TryParse(value, out int percent))
+                    Opacity = percent;
+            });
+
+            SetColorCommand = new RelayCommand<string>(value =>
+            {
+                if (RulerColors.IsKnown(value))
+                    Color = value!;
+            });
+
             ResetPositionCommand = new RelayCommand(ResetPosition);
-            SetUnitCommand = new RelayCommand<string>(unit => Unit = unit ?? "pixels");
-            SetOpacityCommand = new RelayCommand<string>(opacity =>
-            {
-                if (int.TryParse(opacity, out int value))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Setting opacity to {value}%");
-                    Opacity = value;
-                }
-            });
-            SetColorCommand = new RelayCommand<string>(color => Color = color ?? "white");
             ToggleMagnifierCommand = new RelayCommand(() => MagnifierEnabled = !MagnifierEnabled);
             ToggleEdgeSnappingCommand = new RelayCommand(() => EdgeSnappingEnabled = !EdgeSnappingEnabled);
             ClearGuidesCommand = new RelayCommand(ClearGuides);
             CopyMeasurementCommand = new RelayCommand(CopyMeasurement);
+            CycleOpacityCommand = new RelayCommand(CycleOpacity);
         }
 
-        #region Properties
+        #region Persisted Properties
 
+        /// <summary>Ruler length along its own axis, in pixels.</summary>
         public int Width
         {
             get => _width;
-            set
-            {
-                if (SetProperty(ref _width, value))
-                {
-                    AutoSaveConfiguration();
-                }
-            }
+            set => SetPersisted(ref _width,
+                RulerDefaults.Clamp(value, RulerDefaults.MinWidth, RulerDefaults.MaxWidth));
         }
 
+        /// <summary>Ruler thickness, in pixels.</summary>
         public int Height
         {
             get => _height;
-            set
-            {
-                if (SetProperty(ref _height, value))
-                {
-                    AutoSaveConfiguration();
-                }
-            }
+            set => SetPersisted(ref _height,
+                RulerDefaults.Clamp(value, RulerDefaults.MinHeight, RulerDefaults.MaxHeight));
         }
 
         public int PositionX
         {
             get => _positionX;
-            set
-            {
-                if (SetProperty(ref _positionX, value))
-                {
-                    AutoSaveConfiguration();
-                }
-            }
+            set => SetPersisted(ref _positionX, value);
         }
 
         public int PositionY
         {
             get => _positionY;
-            set
-            {
-                if (SetProperty(ref _positionY, value))
-                {
-                    AutoSaveConfiguration();
-                }
-            }
+            set => SetPersisted(ref _positionY, value);
         }
 
+        /// <summary>Rotation in degrees, always normalized to 0-359.</summary>
         public int Rotation
         {
             get => _rotation;
-            set
-            {
-                if (SetProperty(ref _rotation, value))
-                {
-                    AutoSaveConfiguration();
-                }
-            }
+            set => SetPersisted(ref _rotation, RulerDefaults.NormalizeRotation(value));
         }
 
+        /// <summary>Background opacity as a percentage.</summary>
         public int Opacity
         {
             get => _opacity;
             set
             {
-                if (SetProperty(ref _opacity, value))
-                {
-                    OnPropertyChanged(nameof(OpacityValue));
-                    OnPropertyChanged(nameof(BackgroundBrush));
-                    AutoSaveConfiguration();
-                }
+                var clamped = RulerDefaults.Clamp(value, RulerDefaults.MinOpacity, RulerDefaults.MaxOpacity);
+                if (SetPersisted(ref _opacity, clamped))
+                    InvalidateBackgroundBrush();
             }
         }
 
@@ -152,257 +141,261 @@ namespace RulerOverlay.ViewModels
             get => _color;
             set
             {
-                if (SetProperty(ref _color, value))
-                {
-                    OnPropertyChanged(nameof(BackgroundBrush));
-                    AutoSaveConfiguration();
-                }
+                if (SetPersisted(ref _color, RulerColors.IsKnown(value) ? value : RulerDefaults.Color))
+                    InvalidateBackgroundBrush();
             }
         }
 
-        public string Unit
+        /// <summary>Active measurement unit.</summary>
+        public MeasurementUnit Unit
         {
             get => _unit;
             set
             {
-                if (SetProperty(ref _unit, value))
-                {
-                    AutoSaveConfiguration();
-                }
+                if (SetPersisted(ref _unit, value))
+                    OnPropertyChanged(nameof(UnitKey));
             }
         }
 
+        /// <summary>String form of <see cref="Unit"/>, for menu check-state binding.</summary>
+        public string UnitKey => _unit.ToKey();
+
+        /// <summary>Calibrated pixels per inch.</summary>
         public int Ppi
         {
             get => _ppi;
             set
             {
-                if (SetProperty(ref _ppi, value))
-                {
-                    _measurementEngine.SetPPI(value);
-                    AutoSaveConfiguration();
-                }
+                var clamped = RulerDefaults.Clamp(value, RulerDefaults.MinPpi, RulerDefaults.MaxPpi);
+                if (SetPersisted(ref _ppi, clamped))
+                    _measurementEngine.Ppi = clamped;
             }
         }
 
         public int MagnifierZoom
         {
             get => _magnifierZoom;
-            set
-            {
-                if (SetProperty(ref _magnifierZoom, value))
-                {
-                    AutoSaveConfiguration();
-                }
-            }
+            set => SetPersisted(ref _magnifierZoom,
+                RulerDefaults.Clamp(value, RulerDefaults.MinMagnifierZoom, RulerDefaults.MaxMagnifierZoom));
         }
 
         public bool MagnifierEnabled
         {
             get => _magnifierEnabled;
-            set
-            {
-                if (SetProperty(ref _magnifierEnabled, value))
-                {
-                    AutoSaveConfiguration();
-                }
-            }
+            set => SetPersisted(ref _magnifierEnabled, value);
         }
 
         public bool EdgeSnappingEnabled
         {
             get => _edgeSnappingEnabled;
-            set
-            {
-                if (SetProperty(ref _edgeSnappingEnabled, value))
-                {
-                    AutoSaveConfiguration();
-                }
-            }
+            set => SetPersisted(ref _edgeSnappingEnabled, value);
         }
 
         #endregion
 
-        #region Computed Properties for UI Binding
+        #region Computed Properties
 
-        /// <summary>
-        /// Opacity value for WPF (0.0 to 1.0)
-        /// </summary>
+        /// <summary>Opacity as the 0.0-1.0 fraction WPF expects.</summary>
         public double OpacityValue => _opacity / 100.0;
 
         /// <summary>
-        /// Background brush based on selected color
+        /// Physical screen pixels per DIP on the ruler's current monitor. Set by the view,
+        /// never persisted - it is a property of the display, not of the ruler.
+        ///
+        /// The ruler body is drawn in real pixels and scaled down by this factor, so any
+        /// on-ruler chrome must be scaled back up by it to keep a constant apparent size.
         /// </summary>
-        public Brush BackgroundBrush
+        public double PixelScale
         {
-            get
+            get => _pixelScale;
+            set
             {
-                var color = _color.ToLower() switch
-                {
-                    "white" => Colors.White,
-                    "black" => Colors.Black,
-                    "yellow" => Colors.Yellow,
-                    "cyan" => Colors.Cyan,
-                    _ => Colors.White
-                };
-                return new SolidColorBrush(color) { Opacity = OpacityValue };
+                if (value > 0 && SetProperty(ref _pixelScale, value))
+                    OnPropertyChanged(nameof(ResizeHandleWidth));
             }
+        }
+
+        /// <summary>Resize strip width in ruler pixels, holding a constant apparent size.</summary>
+        public double ResizeHandleWidth => RulerDefaults.ResizeHandleWidth * _pixelScale;
+
+        /// <summary>
+        /// Background brush for the current colour and opacity.
+        /// Cached and frozen; rebuilt only when colour or opacity changes.
+        /// </summary>
+        public Brush BackgroundBrush =>
+            _cachedBackgroundBrush ??= RulerColors.CreateBrush(_color, OpacityValue);
+
+        /// <summary>The ruler's length rendered in the active unit, e.g. "500 px".</summary>
+        public string FormattedLength => _measurementEngine.Format(_width, _unit);
+
+        private void InvalidateBackgroundBrush()
+        {
+            _cachedBackgroundBrush = null;
+            OnPropertyChanged(nameof(OpacityValue));
+            OnPropertyChanged(nameof(BackgroundBrush));
         }
 
         #endregion
 
-        #region Configuration Management
+        #region Configuration
 
         /// <summary>
-        /// Loads configuration from file and applies to ViewModel
+        /// Applies the persisted configuration to this ViewModel.
+        /// Runs with saving suppressed so restoring state does not immediately rewrite the file.
         /// </summary>
         public void LoadConfiguration()
         {
             var config = _configService.Load();
 
-            // Apply loaded values without triggering auto-save
-            _width = config.Size.Width;
-            _height = config.Size.Height;
-            _positionX = config.Position.X;
-            _positionY = config.Position.Y;
-            _rotation = config.Rotation;
-            _opacity = config.Opacity;
-            _color = config.Color;
-            _unit = config.Unit;
-            _ppi = config.Ppi;
-            _magnifierZoom = config.MagnifierZoom;
-            _magnifierEnabled = config.MagnifierEnabled;
-            _edgeSnappingEnabled = config.EdgeSnappingEnabled;
+            _isLoading = true;
+            try
+            {
+                Width = config.Size.Width;
+                Height = config.Size.Height;
+                PositionX = config.Position.X;
+                PositionY = config.Position.Y;
+                Rotation = config.Rotation;
+                Opacity = config.Opacity;
+                Color = config.Color;
+                Unit = MeasurementUnits.Parse(config.Unit);
+                Ppi = config.Ppi;
+                MagnifierZoom = config.MagnifierZoom;
+                MagnifierEnabled = config.MagnifierEnabled;
+                EdgeSnappingEnabled = config.EdgeSnappingEnabled;
+            }
+            finally
+            {
+                _isLoading = false;
+            }
 
-            // Update measurement engine
-            _measurementEngine.SetPPI(_ppi);
-
-            // Notify UI of all property changes
-            OnPropertyChanged(nameof(Width));
-            OnPropertyChanged(nameof(Height));
-            OnPropertyChanged(nameof(PositionX));
-            OnPropertyChanged(nameof(PositionY));
-            OnPropertyChanged(nameof(Rotation));
-            OnPropertyChanged(nameof(Opacity));
-            OnPropertyChanged(nameof(Color));
-            OnPropertyChanged(nameof(Unit));
-            OnPropertyChanged(nameof(Ppi));
-            OnPropertyChanged(nameof(MagnifierZoom));
-            OnPropertyChanged(nameof(MagnifierEnabled));
-            OnPropertyChanged(nameof(EdgeSnappingEnabled));
-            OnPropertyChanged(nameof(OpacityValue));
-            OnPropertyChanged(nameof(BackgroundBrush));
+            InvalidateBackgroundBrush();
+            OnPropertyChanged(nameof(FormattedLength));
         }
 
         /// <summary>
-        /// Saves current ViewModel state to configuration file
+        /// Writes current state to disk immediately, cancelling any pending debounced save.
         /// </summary>
         public void SaveConfiguration()
         {
-            var config = new RulerConfig
+            _saveTimer.Stop();
+            _savePending = false;
+
+            // Shortcuts are re-attached by ConfigurationService so a hand-edited
+            // shortcut map is never overwritten by an automatic save.
+            _configService.Save(new RulerConfig
             {
                 Position = new Position { X = _positionX, Y = _positionY },
                 Size = new Models.Size { Width = _width, Height = _height },
                 Rotation = _rotation,
-                Unit = _unit,
+                Unit = _unit.ToKey(),
                 Opacity = _opacity,
                 Color = _color,
                 Ppi = _ppi,
                 MagnifierZoom = _magnifierZoom,
                 MagnifierEnabled = _magnifierEnabled,
                 EdgeSnappingEnabled = _edgeSnappingEnabled
-            };
-
-            _configService.Save(config);
+            });
         }
 
-        private void AutoSaveConfiguration()
+        /// <summary>
+        /// Sets a backing field, raises change notification, and schedules a debounced save.
+        /// </summary>
+        private bool SetPersisted<T>(ref T storage, T value,
+            [System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
         {
-            // Auto-save on every property change
-            SaveConfiguration();
+            if (!SetProperty(ref storage, value, propertyName))
+                return false;
+
+            if (propertyName is nameof(Width) or nameof(Unit) or nameof(Ppi))
+                OnPropertyChanged(nameof(FormattedLength));
+
+            ScheduleSave();
+            return true;
+        }
+
+        private void ScheduleSave()
+        {
+            if (_isLoading || _disposed)
+                return;
+
+            _savePending = true;
+
+            // Restarting the timer coalesces a burst of changes into a single write
+            // once the user pauses.
+            _saveTimer.Stop();
+            _saveTimer.Start();
+        }
+
+        private void FlushPendingSave()
+        {
+            if (_savePending)
+                SaveConfiguration();
+            else
+                _saveTimer.Stop();
         }
 
         #endregion
 
         #region Commands
 
-        /// <summary>
-        /// Command to set rotation to a specific angle (accepts string parameter)
-        /// </summary>
+        /// <summary>Sets rotation to a preset angle. Parameter is the angle in degrees.</summary>
         public ICommand SetRotationCommand { get; }
 
-        /// <summary>
-        /// Command to reset position to center screen
-        /// </summary>
+        /// <summary>Restores the default size, rotation and a centered position.</summary>
         public ICommand ResetPositionCommand { get; }
 
-        /// <summary>
-        /// Command to set measurement unit (accepts string parameter)
-        /// </summary>
+        /// <summary>Sets the measurement unit. Parameter is a unit key such as "inches".</summary>
         public ICommand SetUnitCommand { get; }
 
-        /// <summary>
-        /// Command to set opacity level (accepts string parameter)
-        /// </summary>
+        /// <summary>Sets opacity. Parameter is a percentage such as "60".</summary>
         public ICommand SetOpacityCommand { get; }
 
-        /// <summary>
-        /// Command to set ruler color (accepts string parameter)
-        /// </summary>
+        /// <summary>Sets the ruler colour. Parameter is a colour name such as "cyan".</summary>
         public ICommand SetColorCommand { get; }
 
-        /// <summary>
-        /// Command to toggle magnifier on/off
-        /// </summary>
+        /// <summary>Steps opacity through the preset levels.</summary>
+        public ICommand CycleOpacityCommand { get; }
+
         public ICommand ToggleMagnifierCommand { get; }
 
-        /// <summary>
-        /// Command to toggle edge snapping on/off
-        /// </summary>
         public ICommand ToggleEdgeSnappingCommand { get; }
 
-        /// <summary>
-        /// Command to clear all edge guides
-        /// </summary>
         public ICommand ClearGuidesCommand { get; }
 
-        /// <summary>
-        /// Command to copy current measurement to clipboard
-        /// </summary>
         public ICommand CopyMeasurementCommand { get; }
 
-        private void ResetPosition()
+        /// <summary>
+        /// Returns the ruler to its default size and rotation, centered on the primary monitor.
+        /// </summary>
+        public void ResetPosition()
         {
-            // Reset rotation
-            Rotation = 0;
+            Rotation = RulerDefaults.Rotation;
+            Width = RulerDefaults.Width;
+            Height = RulerDefaults.Height;
 
-            // Reset to default size
-            Width = 500;
-            Height = 90;
-
-            // Center on screen
-            var screenWidth = (int)System.Windows.SystemParameters.PrimaryScreenWidth;
-            var screenHeight = (int)System.Windows.SystemParameters.PrimaryScreenHeight;
-
-            PositionX = (screenWidth - Width) / 2;
-            PositionY = (screenHeight - Height) / 2;
+            var center = ScreenHelper.GetCenteredPosition(Width, Height);
+            PositionX = center.X;
+            PositionY = center.Y;
         }
 
-        private void ClearGuides()
+        private void ClearGuides() => EdgeGuides.Clear();
+
+        /// <summary>
+        /// Steps to the next opacity preset, wrapping around at the end.
+        /// </summary>
+        private void CycleOpacity()
         {
-            EdgeGuides.Clear();
+            var steps = RulerDefaults.OpacitySteps;
+            int index = Array.IndexOf(steps, _opacity);
+            Opacity = steps[(index < 0 ? 0 : index + 1) % steps.Length];
         }
 
         private void CopyMeasurement()
         {
-            var clipboardService = new ClipboardService();
-            var measurement = clipboardService.FormatMeasurement(Width, Unit, Ppi);
+            var measurement = FormattedLength;
 
-            if (clipboardService.CopyToClipboard(measurement))
-            {
-                // Raise event to show toast notification
+            if (ClipboardService.CopyToClipboard(measurement))
                 MeasurementCopied?.Invoke(this, measurement);
-            }
         }
 
         #endregion
@@ -410,51 +403,43 @@ namespace RulerOverlay.ViewModels
         #region Position Validation
 
         /// <summary>
-        /// Validates and corrects ruler position to ensure it's visible on screen
-        /// At least 100px must be visible
+        /// Ensures the ruler is reachable on some monitor after a config restore.
+        ///
+        /// Checks every display rather than only the primary one, so a ruler saved on a
+        /// secondary monitor (which can legitimately sit at negative coordinates) is left
+        /// where the user put it. Only a ruler that is genuinely off every screen — for
+        /// instance because a monitor was unplugged — is recentered.
         /// </summary>
         public void ValidatePosition()
         {
-            var screenWidth = (int)System.Windows.SystemParameters.PrimaryScreenWidth;
-            var screenHeight = (int)System.Windows.SystemParameters.PrimaryScreenHeight;
+            var bounds = new Drawing.Rectangle(PositionX, PositionY, Math.Max(_width, 1), Math.Max(_height, 1));
 
-            const int minVisiblePixels = 100;
+            if (ScreenHelper.IsReachable(bounds, RulerDefaults.MinVisiblePixels))
+                return;
 
-            // Ensure ruler is not too far off-screen
-            if (PositionX + Width < minVisiblePixels)
-            {
-                // Too far left, bring it back
-                PositionX = minVisiblePixels - Width;
-            }
+            System.Diagnostics.Debug.WriteLine(
+                $"[RulerViewModel] Saved position {bounds} is off-screen; recentering.");
 
-            if (PositionX > screenWidth - minVisiblePixels)
-            {
-                // Too far right, bring it back
-                PositionX = screenWidth - minVisiblePixels;
-            }
-
-            if (PositionY + Height < minVisiblePixels)
-            {
-                // Too far up, bring it back
-                PositionY = minVisiblePixels - Height;
-            }
-
-            if (PositionY > screenHeight - minVisiblePixels)
-            {
-                // Too far down, bring it back
-                PositionY = screenHeight - minVisiblePixels;
-            }
-
-            // If still completely off-screen, reset to center
-            if (PositionX < -Width + minVisiblePixels ||
-                PositionX > screenWidth ||
-                PositionY < -Height + minVisiblePixels ||
-                PositionY > screenHeight)
-            {
-                ResetPosition();
-            }
+            ResetPosition();
         }
 
         #endregion
+
+        /// <summary>
+        /// Stops the save timer and writes out any change still waiting to be persisted.
+        /// </summary>
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            if (_savePending)
+                SaveConfiguration();
+
+            _saveTimer.Stop();
+            _disposed = true;
+
+            GC.SuppressFinalize(this);
+        }
     }
 }
