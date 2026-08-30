@@ -225,6 +225,8 @@
                     <LineBreak/>
                     <Run Text="• The magnifier is on by default here for precise endpoint placement; press M to toggle it"/>
                     <LineBreak/>
+                    <Run Text="• Endpoints are drawn as open crosshairs, leaving the exact measured pixel visible instead of covering it"/>
+                    <LineBreak/>
                     <Run Text="• Press Del to clear the line, Esc or right-click to exit"/>
                 </TextBlock>
 

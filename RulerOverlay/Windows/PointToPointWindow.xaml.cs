@@ -4,6 +4,8 @@ using RulerOverlay.ViewModels;
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using Key = System.Windows.Input.Key;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
@@ -25,14 +27,27 @@ namespace RulerOverlay.Windows
     /// </summary>
     public partial class PointToPointWindow : Window
     {
-        private const double MarkerRadius = 6;
+        /// <summary>Radius of the open circle around each endpoint.</summary>
+        private const double MarkerRadius = 7;
+
+        /// <summary>
+        /// Clear space left at the exact endpoint. Nothing is drawn inside this radius, so
+        /// the pixel actually being measured stays visible - both directly and in the
+        /// magnifier, which captures the overlay along with the screen beneath it.
+        /// </summary>
+        private const double MarkerCentreGap = 2.5;
+
+        /// <summary>How far the crosshair ticks reach out from the endpoint.</summary>
+        private const double MarkerTickLength = 12;
+
+        private const double MarkerStrokeThickness = 1.5;
         private const double LabelOffsetX = -40;
         private const double LabelOffsetY = -20;
 
         private readonly PointToPointViewModel _viewModel;
 
         private Line? _measurementLine;
-        private Ellipse? _endMarker;
+        private Path? _endMarker;
         private TextBlock? _distanceLabel;
 
         /// <summary>
@@ -200,25 +215,57 @@ namespace RulerOverlay.Windows
             }
         }
 
-        private static Ellipse CreateMarker(Point center, Brush fill)
+        /// <summary>
+        /// Builds an open reticle for an endpoint: a hollow circle with four ticks aimed at
+        /// the centre, and nothing drawn at the centre itself.
+        ///
+        /// A filled dot covers the very pixel the user is trying to place, which makes the
+        /// exact endpoint guesswork. Leaving the middle clear means the target stays
+        /// readable right down to the pixel under magnification.
+        /// </summary>
+        private static Path CreateMarker(Point center, Brush stroke)
         {
-            var marker = new Ellipse
+            var geometry = new GeometryGroup();
+            geometry.Children.Add(new EllipseGeometry(new Point(0, 0), MarkerRadius, MarkerRadius));
+
+            // Ticks stop short of the centre, leaving MarkerCentreGap clear all round.
+            geometry.Children.Add(new LineGeometry(new Point(-MarkerTickLength, 0), new Point(-MarkerCentreGap, 0)));
+            geometry.Children.Add(new LineGeometry(new Point(MarkerCentreGap, 0), new Point(MarkerTickLength, 0)));
+            geometry.Children.Add(new LineGeometry(new Point(0, -MarkerTickLength), new Point(0, -MarkerCentreGap)));
+            geometry.Children.Add(new LineGeometry(new Point(0, MarkerCentreGap), new Point(0, MarkerTickLength)));
+            geometry.Freeze();
+
+            var marker = new Path
             {
-                Width = MarkerRadius * 2,
-                Height = MarkerRadius * 2,
-                Fill = fill,
-                Stroke = Brushes.White,
-                StrokeThickness = 2
+                Data = geometry,
+                Stroke = stroke,
+                StrokeThickness = MarkerStrokeThickness,
+                // The overlay handles the drag itself; markers must not intercept it.
+                IsHitTestVisible = false,
+                // Keeps the reticle legible over both light and dark content.
+                Effect = new DropShadowEffect
+                {
+                    Color = Colors.Black,
+                    BlurRadius = 3,
+                    ShadowDepth = 0,
+                    Opacity = 0.9
+                },
+                RenderTransform = new TranslateTransform(center.X, center.Y)
             };
 
-            PositionMarker(marker, center);
             return marker;
         }
 
-        private static void PositionMarker(Ellipse marker, Point center)
+        /// <summary>
+        /// Moves an existing reticle, rather than rebuilding its geometry each mouse move.
+        /// </summary>
+        private static void PositionMarker(Path marker, Point center)
         {
-            Canvas.SetLeft(marker, center.X - MarkerRadius);
-            Canvas.SetTop(marker, center.Y - MarkerRadius);
+            if (marker.RenderTransform is TranslateTransform transform)
+            {
+                transform.X = center.X;
+                transform.Y = center.Y;
+            }
         }
 
         /// <summary>
