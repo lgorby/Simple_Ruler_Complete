@@ -1,10 +1,28 @@
-<UserControl x:Class="RulerOverlay.Controls.ToastControl"
+﻿<UserControl x:Class="RulerOverlay.Controls.ToastControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             Opacity="0">
+             Opacity="0"
+             IsHitTestVisible="False">
+
+    <UserControl.Resources>
+        <!--
+            One storyboard drives the whole toast: fade in, hold, fade out.
+            Two separate storyboards animating the same property fight each other -
+            the second Begin() replaces the first, so the fade-in never survives.
+        -->
+        <Storyboard x:Key="ToastStoryboard">
+            <DoubleAnimationUsingKeyFrames Storyboard.TargetProperty="Opacity"
+                                           FillBehavior="Stop">
+                <LinearDoubleKeyFrame Value="0" KeyTime="0:0:0"/>
+                <LinearDoubleKeyFrame Value="1" KeyTime="0:0:0.2"/>
+                <LinearDoubleKeyFrame Value="1" KeyTime="0:0:1.9"/>
+                <LinearDoubleKeyFrame Value="0" KeyTime="0:0:2.2"/>
+            </DoubleAnimationUsingKeyFrames>
+        </Storyboard>
+    </UserControl.Resources>
 
     <Border Background="#DD000000"
             CornerRadius="3"
@@ -22,27 +40,10 @@
 
             <!-- Message -->
             <TextBlock x:Name="MessageText"
-                       Text="Copied to clipboard"
+                       Text=""
                        Foreground="White"
                        FontSize="13"
                        VerticalAlignment="Center"/>
         </StackPanel>
     </Border>
-
-    <UserControl.Resources>
-        <!-- Fade In Animation -->
-        <Storyboard x:Key="FadeInStoryboard">
-            <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                           From="0" To="1"
-                           Duration="0:0:0.2"/>
-        </Storyboard>
-
-        <!-- Fade Out Animation -->
-        <Storyboard x:Key="FadeOutStoryboard">
-            <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                           From="1" To="0"
-                           Duration="0:0:0.3"
-                           BeginTime="0:0:1.7"/>
-        </Storyboard>
-    </UserControl.Resources>
 </UserControl>

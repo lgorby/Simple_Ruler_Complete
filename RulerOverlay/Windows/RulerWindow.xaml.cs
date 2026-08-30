@@ -1,397 +1,472 @@
 using RulerOverlay.Helpers;
+using RulerOverlay.Models;
 using RulerOverlay.Services;
 using RulerOverlay.ViewModels;
 using System;
+using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
-using WinForms = System.Windows.Forms; // Alias for Windows Forms
-using Drawing = System.Drawing; // Alias for System.Drawing
-using Point = System.Windows.Point;
-using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using System.Windows.Threading;
+using Drawing = System.Drawing;
+using WinForms = System.Windows.Forms;
+using Cursors = System.Windows.Input.Cursors;
+using Cursor = System.Windows.Input.Cursor;
+using Key = System.Windows.Input.Key;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using Keyboard = System.Windows.Input.Keyboard;
+using ModifierKeys = System.Windows.Input.ModifierKeys;
+using Mouse = System.Windows.Input.Mouse;
 using MouseButton = System.Windows.Input.MouseButton;
 using MouseButtonEventArgs = System.Windows.Input.MouseButtonEventArgs;
 using MouseButtonState = System.Windows.Input.MouseButtonState;
-using Key = System.Windows.Input.Key;
-using Keyboard = System.Windows.Input.Keyboard;
-using Mouse = System.Windows.Input.Mouse;
-
+using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using Point = System.Windows.Point;
 
 namespace RulerOverlay.Windows
 {
+    /// <summary>
+    /// The always-on-top ruler overlay.
+    /// </summary>
     public partial class RulerWindow : Window
     {
-        private readonly ConfigurationService _configService;
         private readonly RulerViewModel _viewModel;
-        private readonly Services.EdgeSnappingService _edgeSnapping;
-        private WinForms.NotifyIcon? _notifyIcon;
+        private readonly EdgeSnappingService _edgeSnapping;
 
-        private bool _isResizing = false;
-        private bool _isLeftEdge = false;
-        private bool _suppressWindowSizeUpdate = false;
+        /// <summary>True when no config file existed at startup, so nothing is worth restoring.</summary>
+        private readonly bool _isFirstRun;
+
+        /// <summary>
+        /// Physical screen pixels per device-independent pixel for the monitor the ruler is on.
+        ///
+        /// The ruler's Width and Height are counts of real screen pixels, because that is what
+        /// the app reports and what the PPI calibration is derived from. WPF lays out in DIPs,
+        /// so this factor converts between the two and is the sole reason the ruler measures
+        /// correctly on a scaled display.
+        /// </summary>
+        private double _pixelScale = 1.0;
+
+        private WinForms.NotifyIcon? _notifyIcon;
+        private WinForms.ContextMenuStrip? _trayMenu;
+        private Drawing.Icon? _trayIcon;
+
+        // Resize state
+        private bool _isResizing;
+        private bool _isLeftEdge;
+        private bool _suppressWindowSizeUpdate;
+        private bool _resizeExpanded;
         private Point _resizeStartScreenPoint;
         private double _initialWidth;
         private double _anchorX;
         private double _anchorY;
         private double _lastResizeLeft;
         private double _lastResizeTop;
-        private bool _resizeExpanded = false;
+
+        private bool _isClosing;
 
         public RulerWindow()
         {
             InitializeComponent();
 
-            _configService = new ConfigurationService();
-            _viewModel = new RulerViewModel(_configService);
-            _edgeSnapping = new Services.EdgeSnappingService();
+            var configService = new ConfigurationService();
+            _viewModel = new RulerViewModel(configService);
+            _isFirstRun = configService.IsFirstRun;
+            _edgeSnapping = new EdgeSnappingService();
             DataContext = _viewModel;
 
-            // Load configuration and restore window state
             Loaded += RulerWindow_Loaded;
             Closing += RulerWindow_Closing;
+            Closed += RulerWindow_Closed;
             MouseMove += RulerWindow_MouseMove;
             MouseLeave += RulerWindow_MouseLeave;
             SizeChanged += RulerWindow_SizeChanged;
 
-            // Subscribe to measurement copied event
             _viewModel.MeasurementCopied += ViewModel_MeasurementCopied;
+            Toast.Dismissed += (_, _) => ToastPopup.IsOpen = false;
         }
 
-        private void RulerWindow_SizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            // Skip during resize - the resize handler triggers RenderMarkings via ViewModel
-            if (!_isResizing)
-                RenderMarkings();
-        }
-
-        private void ViewModel_MeasurementCopied(object? sender, string measurement)
-        {
-            Toast.Show($"Copied: {measurement}");
-        }
+        #region Lifecycle
 
         private void RulerWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // Restore window position and size from config
             _viewModel.LoadConfiguration();
 
-            // Validate position to ensure ruler is visible
-            _viewModel.ValidatePosition();
+            if (_isFirstRun)
+            {
+                // Nothing was saved, so open centred on screen at the default size
+                // rather than in the top-left corner.
+                _viewModel.ResetPosition();
+            }
+            else
+            {
+                // Drop the ruler back onto a monitor if the saved position is no longer reachable.
+                _viewModel.ValidatePosition();
+            }
 
-            Left = _viewModel.PositionX;
-            Top = _viewModel.PositionY;
-            // Width and Height are managed by SizeToContent based on RootGrid dimensions
+            ApplyPixelScale();
 
-            // Adjust window size for saved rotation
+            Left = ScreenHelper.ToLogical(_viewModel.PositionX, _pixelScale);
+            Top = ScreenHelper.ToLogical(_viewModel.PositionY, _pixelScale);
+
+            Magnifier.ZoomLevel = _viewModel.MagnifierZoom;
+
             AdjustWindowSizeForRotation(_viewModel.Rotation);
 
-            // Subscribe to property changes to redraw markings
             _viewModel.PropertyChanged += ViewModel_PropertyChanged;
 
-            // Initial render
             RenderMarkings();
-
-            // Initialize system tray icon
             InitializeSystemTray();
         }
 
-        private void ViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        private void RulerWindow_Closing(object? sender, CancelEventArgs e)
         {
-            // Redraw markings when unit, PPI, width, height, or rotation changes
-            if (e.PropertyName == nameof(_viewModel.Unit) ||
-                e.PropertyName == nameof(_viewModel.Ppi) ||
-                e.PropertyName == nameof(_viewModel.Width) ||
-                e.PropertyName == nameof(_viewModel.Height) ||
-                e.PropertyName == nameof(_viewModel.Rotation))
-            {
-                RenderMarkings();
-            }
+            _isClosing = true;
 
-            // Adjust window size when rotation, width, or height changes
-            if (e.PropertyName == nameof(_viewModel.Rotation) ||
-                e.PropertyName == nameof(_viewModel.Width) ||
-                e.PropertyName == nameof(_viewModel.Height))
-            {
-                AdjustWindowSizeForRotation(_viewModel.Rotation);
-            }
+            // Flush any change still sitting in the debounce window.
+            _viewModel.SaveConfiguration();
         }
 
-        private void RenderMarkings()
+        private void RulerWindow_Closed(object? sender, EventArgs e)
         {
-            // Always use the ruler's original dimensions (not the window's dimensions)
-            // The LayoutTransform will rotate the canvas with the markings
-            // Pass rotation so labels can counter-rotate to stay horizontal
-            Utils.RulerRenderer.DrawMarkings(
-                MarkingsCanvas,
-                _viewModel.Width,
-                _viewModel.Height,
-                _viewModel.Unit,
-                _viewModel.Ppi,
-                _viewModel.Rotation
-            );
+            _viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            _viewModel.MeasurementCopied -= ViewModel_MeasurementCopied;
+            _viewModel.Dispose();
+
+            HideMagnifier();
+            DisposeSystemTray();
         }
 
-        private void AdjustWindowSizeForRotation(int rotation)
+        /// <summary>
+        /// Re-applies the pixel scale when the ruler is dragged onto a monitor with
+        /// different scaling, so it keeps measuring real pixels there too.
+        /// </summary>
+        protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)
         {
-            // During resize, the resize handler manages window size and transforms directly.
-            // Skip this entirely to avoid conflicting with the resize handler's state.
-            if (_suppressWindowSizeUpdate)
-                return;
+            base.OnDpiChanged(oldDpi, newDpi);
 
-            double rulerWidth = _viewModel.Width;
-            double rulerHeight = _viewModel.Height;
-            double angleRad = rotation * Math.PI / 180.0;
-            double cos = Math.Cos(angleRad);
-            double sin = Math.Sin(angleRad);
-
-            // Calculate where all four corners of the ruler end up after rotation around (0,0)
-            // Original corners: (0,0), (W,0), (0,H), (W,H)
-            // After rotation by angle θ:
-            // (0,0) -> (0,0)
-            // (W,0) -> (W*cos, W*sin)
-            // (0,H) -> (-H*sin, H*cos)
-            // (W,H) -> (W*cos - H*sin, W*sin + H*cos)
-
-            double x1 = 0;
-            double y1 = 0;
-            double x2 = rulerWidth * cos;
-            double y2 = rulerWidth * sin;
-            double x3 = -rulerHeight * sin;
-            double y3 = rulerHeight * cos;
-            double x4 = rulerWidth * cos - rulerHeight * sin;
-            double y4 = rulerWidth * sin + rulerHeight * cos;
-
-            // Find bounding box
-            double minX = Math.Min(Math.Min(x1, x2), Math.Min(x3, x4));
-            double maxX = Math.Max(Math.Max(x1, x2), Math.Max(x3, x4));
-            double minY = Math.Min(Math.Min(y1, y2), Math.Min(y3, y4));
-            double maxY = Math.Max(Math.Max(y1, y2), Math.Max(y3, y4));
-
-            double boundingWidth = maxX - minX;
-            double boundingHeight = maxY - minY;
-
-            // Set window size to bounding box
-            this.Width = Math.Ceiling(boundingWidth);
-            this.Height = Math.Ceiling(boundingHeight);
-
-            // Set rotation center to (0,0)
-            RotationTransform.CenterX = 0;
-            RotationTransform.CenterY = 0;
-
-            // Apply translation to shift rotated content into positive window space
-            TranslationTransform.X = -minX;
-            TranslationTransform.Y = -minY;
-
-            // Clear any margins
-            RootGrid.Margin = new Thickness(0);
-
-            // Update resize handle cursors based on rotation
-            UpdateResizeCursors(rotation);
-
-            System.Diagnostics.Debug.WriteLine($"[AdjustWindowSizeForRotation] Rotation={rotation}°, Ruler={rulerWidth}x{rulerHeight}, Window={boundingWidth:F1}x{boundingHeight:F1}, Translation=({-minX:F1},{-minY:F1})");
+            ApplyPixelScale();
+            AdjustWindowSizeForRotation(_viewModel.Rotation);
+            RenderMarkings();
         }
 
-        private void UpdateResizeCursors(int rotation)
+        /// <summary>
+        /// Sets the transform that makes one RootGrid unit equal one physical screen pixel.
+        /// Windows reports a single uniform scaling factor per monitor, so the horizontal
+        /// value is used for both axes to keep rotation isotropic.
+        /// </summary>
+        private void ApplyPixelScale()
         {
-            // Normalize rotation to 0-359 range
-            int normalizedRotation = ((rotation % 360) + 360) % 360;
+            _pixelScale = ScreenHelper.GetDpiScale(this).X;
 
-            // Determine cursor based on rotation angle
-            System.Windows.Input.Cursor cursor;
+            PixelScaleTransform.ScaleX = 1.0 / _pixelScale;
+            PixelScaleTransform.ScaleY = 1.0 / _pixelScale;
 
-            if (normalizedRotation >= 337.5 || normalizedRotation < 22.5)
-            {
-                // 0° (horizontal) - use horizontal resize cursor
-                cursor = System.Windows.Input.Cursors.SizeWE;
-            }
-            else if (normalizedRotation >= 22.5 && normalizedRotation < 67.5)
-            {
-                // 45° (diagonal NE-SW)
-                cursor = System.Windows.Input.Cursors.SizeNESW;
-            }
-            else if (normalizedRotation >= 67.5 && normalizedRotation < 112.5)
-            {
-                // 90° (vertical)
-                cursor = System.Windows.Input.Cursors.SizeNS;
-            }
-            else if (normalizedRotation >= 112.5 && normalizedRotation < 157.5)
-            {
-                // 135° (diagonal NW-SE)
-                cursor = System.Windows.Input.Cursors.SizeNWSE;
-            }
-            else if (normalizedRotation >= 157.5 && normalizedRotation < 202.5)
-            {
-                // 180° (horizontal)
-                cursor = System.Windows.Input.Cursors.SizeWE;
-            }
-            else if (normalizedRotation >= 202.5 && normalizedRotation < 247.5)
-            {
-                // 225° (diagonal NE-SW)
-                cursor = System.Windows.Input.Cursors.SizeNESW;
-            }
-            else if (normalizedRotation >= 247.5 && normalizedRotation < 292.5)
-            {
-                // 270° (vertical)
-                cursor = System.Windows.Input.Cursors.SizeNS;
-            }
-            else // 292.5 to 337.5
-            {
-                // 315° (diagonal NW-SE)
-                cursor = System.Windows.Input.Cursors.SizeNWSE;
-            }
-
-            // Apply cursor to both resize handles
-            LeftResizeHandle.Cursor = cursor;
-            RightResizeHandle.Cursor = cursor;
+            // Lets the on-ruler chrome cancel the scale out and stay a usable size.
+            _viewModel.PixelScale = _pixelScale;
         }
 
         protected override void OnSourceInitialized(EventArgs e)
         {
             base.OnSourceInitialized(e);
 
-            // Set layered window attributes for true transparency
+            // WS_EX_TOOLWINDOW keeps the overlay out of Alt+Tab; WS_EX_LAYERED enables
+            // the per-pixel transparency the ruler background relies on.
             var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero)
+                return;
+
             var extendedStyle = Win32Helper.GetWindowLong(hwnd, Win32Helper.GWL_EXSTYLE);
             Win32Helper.SetWindowLong(hwnd, Win32Helper.GWL_EXSTYLE,
                 extendedStyle | Win32Helper.WS_EX_LAYERED | Win32Helper.WS_EX_TOOLWINDOW);
-
-            // Keyboard shortcuts are handled locally via Window_PreviewKeyDown
         }
 
+        #endregion
 
-        private void RulerWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
+        #region Rendering
+
+        private void RulerWindow_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            // Save configuration before closing
-            _viewModel.SaveConfiguration();
+            // During a resize the drag handler drives redraws through the ViewModel.
+            if (!_isResizing)
+                RenderMarkings();
+        }
 
-            // Dispose system tray icon
-            if (_notifyIcon != null)
+        private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            switch (e.PropertyName)
             {
-                _notifyIcon.Visible = false;
-                _notifyIcon.Dispose();
+                case nameof(RulerViewModel.Unit):
+                case nameof(RulerViewModel.Ppi):
+                    RenderMarkings();
+                    break;
+
+                case nameof(RulerViewModel.Width):
+                case nameof(RulerViewModel.Height):
+                case nameof(RulerViewModel.Rotation):
+                    RenderMarkings();
+                    AdjustWindowSizeForRotation(_viewModel.Rotation);
+                    break;
+
+                case nameof(RulerViewModel.MagnifierZoom):
+                    Magnifier.ZoomLevel = _viewModel.MagnifierZoom;
+                    break;
+
+                case nameof(RulerViewModel.MagnifierEnabled):
+                    if (!_viewModel.MagnifierEnabled)
+                        HideMagnifier();
+                    break;
             }
         }
 
-        private void InitializeSystemTray()
+        /// <summary>
+        /// Redraws the tick marks for the ruler's own dimensions. The rotation transform
+        /// on RootGrid turns the whole canvas, so markings are always drawn unrotated.
+        /// </summary>
+        private void RenderMarkings()
         {
-            // Create a simple icon for the system tray
-            _notifyIcon = new WinForms.NotifyIcon
+            Utils.RulerRenderer.DrawMarkings(
+                MarkingsCanvas,
+                _viewModel.Width,
+                _viewModel.Height,
+                _viewModel.Unit,
+                _viewModel.Ppi,
+                _viewModel.Rotation,
+                _pixelScale);
+        }
+
+        /// <summary>
+        /// Sizes the window to the axis-aligned bounding box of the rotated ruler and
+        /// shifts the content so it sits inside that box.
+        /// </summary>
+        private void AdjustWindowSizeForRotation(int rotation)
+        {
+            // The resize handler owns window size and transforms while a drag is active.
+            if (_suppressWindowSizeUpdate)
+                return;
+
+            // Corner positions are computed in ruler pixels, then divided by the pixel
+            // scale because Window.Width/Height and TranslateTransform are in DIPs.
+            double rulerWidth = _viewModel.Width;
+            double rulerHeight = _viewModel.Height;
+            var (cos, sin) = GetRotationVector(rotation);
+
+            // The four ruler corners after rotating about (0,0).
+            double x2 = rulerWidth * cos;
+            double y2 = rulerWidth * sin;
+            double x3 = -rulerHeight * sin;
+            double y3 = rulerHeight * cos;
+            double x4 = x2 + x3;
+            double y4 = y2 + y3;
+
+            double minX = Math.Min(0, Math.Min(x2, Math.Min(x3, x4)));
+            double maxX = Math.Max(0, Math.Max(x2, Math.Max(x3, x4)));
+            double minY = Math.Min(0, Math.Min(y2, Math.Min(y3, y4)));
+            double maxY = Math.Max(0, Math.Max(y2, Math.Max(y3, y4)));
+
+            Width = Math.Ceiling(ScreenHelper.ToLogical(maxX - minX, _pixelScale));
+            Height = Math.Ceiling(ScreenHelper.ToLogical(maxY - minY, _pixelScale));
+
+            RotationTransform.CenterX = 0;
+            RotationTransform.CenterY = 0;
+
+            // Shift the rotated content back into positive window space.
+            TranslationTransform.X = ScreenHelper.ToLogical(-minX, _pixelScale);
+            TranslationTransform.Y = ScreenHelper.ToLogical(-minY, _pixelScale);
+
+            RootGrid.Margin = new Thickness(0);
+
+            UpdateResizeCursors(rotation);
+        }
+
+        /// <summary>
+        /// Cosine and sine of a rotation in degrees. Every place that needs to project
+        /// along the ruler's axis goes through this rather than repeating the conversion.
+        /// </summary>
+        private static (double Cos, double Sin) GetRotationVector(int degrees)
+        {
+            double radians = degrees * Math.PI / 180.0;
+            return (Math.Cos(radians), Math.Sin(radians));
+        }
+
+        /// <summary>
+        /// Points the resize handles' cursors along the ruler's current axis, snapped to
+        /// the nearest 45° sector.
+        /// </summary>
+        private void UpdateResizeCursors(int rotation)
+        {
+            // Eight 45° sectors, offset by 22.5° so each angle maps to its nearest axis.
+            int sector = (int)Math.Round(RulerDefaults.NormalizeRotation(rotation) / 45.0) % 8;
+
+            Cursor cursor = (sector % 4) switch
             {
-                Text = "Ruler Overlay",
-                Visible = false // Hidden by default, shown on minimize
+                0 => Cursors.SizeWE,    // 0° / 180°
+                1 => Cursors.SizeNESW,  // 45° / 225°
+                2 => Cursors.SizeNS,    // 90° / 270°
+                _ => Cursors.SizeNWSE   // 135° / 315°
             };
 
-            // Use the application's embedded icon for the system tray
-            var exePath = System.Environment.ProcessPath;
-            if (exePath != null)
-                _notifyIcon.Icon = Drawing.Icon.ExtractAssociatedIcon(exePath);
+            LeftResizeHandle.Cursor = cursor;
+            RightResizeHandle.Cursor = cursor;
+        }
 
-            // Right-click context menu for the tray icon
-            var trayMenu = new WinForms.ContextMenuStrip();
-            trayMenu.Items.Add("Show Ruler", null, (s, e) => RestoreFromTray());
-            trayMenu.Items.Add("Exit", null, (s, e) => Close());
-            _notifyIcon.ContextMenuStrip = trayMenu;
+        #endregion
 
-            // Double-click to restore window
-            _notifyIcon.DoubleClick += (s, e) => RestoreFromTray();
+        #region System Tray
+
+        private void InitializeSystemTray()
+        {
+            try
+            {
+                _trayMenu = new WinForms.ContextMenuStrip();
+                _trayMenu.Items.Add("Show Ruler", null, (_, _) => RestoreFromTray());
+                _trayMenu.Items.Add("Exit", null, (_, _) => Close());
+
+                _notifyIcon = new WinForms.NotifyIcon
+                {
+                    Text = "Ruler Overlay",
+                    ContextMenuStrip = _trayMenu,
+                    Visible = false
+                };
+
+                _trayIcon = LoadTrayIcon();
+                _notifyIcon.Icon = _trayIcon;
+
+                _notifyIcon.DoubleClick += (_, _) => RestoreFromTray();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[RulerWindow] Tray icon setup failed: {ex.Message}");
+                DisposeSystemTray();
+            }
+        }
+
+        /// <summary>
+        /// Loads the executable's own icon, falling back to a stock icon.
+        /// Without an icon a NotifyIcon is invisible, which would strand a
+        /// minimized ruler with no way to bring it back.
+        /// </summary>
+        private static Drawing.Icon LoadTrayIcon()
+        {
+            try
+            {
+                var exePath = Environment.ProcessPath;
+                if (!string.IsNullOrEmpty(exePath))
+                {
+                    var icon = Drawing.Icon.ExtractAssociatedIcon(exePath);
+                    if (icon != null)
+                        return icon;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[RulerWindow] Could not load app icon: {ex.Message}");
+            }
+
+            return Drawing.SystemIcons.Application;
         }
 
         private void MinimizeToTray()
         {
-            if (_notifyIcon != null)
+            if (_notifyIcon == null)
             {
-                _notifyIcon.Visible = true;
-                Hide();
+                // No tray icon means no way back, so minimize normally instead of hiding.
+                WindowState = WindowState.Minimized;
+                return;
             }
+
+            HideMagnifier();
+            _notifyIcon.Visible = true;
+            Hide();
         }
 
         private void RestoreFromTray()
         {
             if (_notifyIcon != null)
+                _notifyIcon.Visible = false;
+
+            Show();
+            WindowState = WindowState.Normal;
+            Activate();
+        }
+
+        private void DisposeSystemTray()
+        {
+            if (_notifyIcon != null)
             {
                 _notifyIcon.Visible = false;
-                Show();
-                WindowState = WindowState.Normal;
-                Activate();
+                _notifyIcon.Dispose();
+                _notifyIcon = null;
             }
+
+            _trayMenu?.Dispose();
+            _trayMenu = null;
+
+            // SystemIcons members are shared and must not be disposed.
+            if (_trayIcon != null && _trayIcon != Drawing.SystemIcons.Application)
+                _trayIcon.Dispose();
+            _trayIcon = null;
         }
 
-        private void MinimizeToTray_Click(object sender, RoutedEventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine("[MinimizeToTray_Click] BUTTON CLICKED!");
-            MinimizeToTray();
-        }
+        #endregion
 
+        #region Toolbar Buttons
+
+        private void MinimizeToTray_Click(object sender, RoutedEventArgs e) => MinimizeToTray();
+
+        /// <summary>
+        /// Advances to the next preset angle. Uses the same list the Rotation menu shows,
+        /// so the button can never land on an angle with no matching menu entry.
+        /// </summary>
         private void QuickRotate_Click(object sender, RoutedEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("[QuickRotate_Click] BUTTON CLICKED!");
-            // Cycle through rotation angles: 0 → 90 → 180 → 270 → 0
-            int newRotation = (_viewModel.Rotation + 90) % 360;
-            _viewModel.Rotation = newRotation;
+            var presets = RulerDefaults.RotationPresets;
+            int index = Array.IndexOf(presets, _viewModel.Rotation);
+            _viewModel.Rotation = presets[(index + 1) % presets.Length];
         }
 
         private void ShowContextMenu_Click(object sender, RoutedEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("[ShowContextMenu_Click] BUTTON CLICKED!");
-            // Show the context menu programmatically
-            RulerBackground.ContextMenu.IsOpen = true;
+            var menu = RulerBackground.ContextMenu;
+            if (menu == null)
+                return;
+
+            // Anchor under the ruler, since this came from a button rather than a click point.
+            menu.PlacementTarget = RulerBackground;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
         }
 
-        #region Arrow Key Nudge
-
-        private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        /// <summary>
+        /// Restores cursor-anchored placement before a right-click opens the menu, undoing
+        /// the button-anchored placement set by <see cref="ShowContextMenu_Click"/>.
+        /// </summary>
+        private void RulerBackground_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
-            bool ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-            bool shift = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+            if (RulerBackground.ContextMenu is { } menu)
+                menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        }
 
-            // Handle Ctrl+ shortcuts (local to this window only)
-            if (ctrl)
+        private void CloseApp_Click(object sender, RoutedEventArgs e) => Close();
+
+        #endregion
+
+        #region Keyboard
+
+        private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            // Shortcuts are window-local by design. Registering them system-wide would
+            // hijack Ctrl+C and friends in every other application.
+            var modifiers = Keyboard.Modifiers;
+            bool ctrl = modifiers.HasFlag(ModifierKeys.Control);
+            bool shift = modifiers.HasFlag(ModifierKeys.Shift);
+
+            if (ctrl && HandleControlShortcut(e.Key))
             {
-                switch (e.Key)
-                {
-                    case Key.R:
-                        _viewModel.ResetPositionCommand.Execute(null);
-                        e.Handled = true;
-                        return;
-                    case Key.C:
-                        _viewModel.CopyMeasurementCommand.Execute(null);
-                        e.Handled = true;
-                        return;
-                    case Key.T:
-                        int newOpacity = _viewModel.Opacity switch
-                        {
-                            100 => 80,
-                            80 => 60,
-                            60 => 40,
-                            40 => 20,
-                            _ => 100
-                        };
-                        _viewModel.Opacity = newOpacity;
-                        e.Handled = true;
-                        return;
-                    case Key.M:
-                        _viewModel.ToggleMagnifierCommand.Execute(null);
-                        e.Handled = true;
-                        return;
-                    case Key.S:
-                        _viewModel.ToggleEdgeSnappingCommand.Execute(null);
-                        e.Handled = true;
-                        return;
-                    case Key.P:
-                        PointToPointMode_Click(this, new RoutedEventArgs());
-                        e.Handled = true;
-                        return;
-                    case Key.Q:
-                        Close();
-                        e.Handled = true;
-                        return;
-                    case Key.G:
-                        _viewModel.ClearGuidesCommand.Execute(null);
-                        e.Handled = true;
-                        return;
-                }
+                e.Handled = true;
+                return;
             }
 
-            // F1 - Help (no modifier)
             if (e.Key == Key.F1)
             {
                 ShowHelpWindow();
@@ -399,30 +474,102 @@ namespace RulerOverlay.Windows
                 return;
             }
 
-            // Arrow key nudge
-            int step = shift ? 10 : 1;
+            if (TryNudge(e.Key, shift ? RulerDefaults.NudgeStepLarge : RulerDefaults.NudgeStep))
+                e.Handled = true;
+        }
 
-            switch (e.Key)
+        /// <summary>
+        /// Runs the Ctrl+key shortcut for a key, if there is one.
+        /// </summary>
+        /// <returns>True when the key was handled.</returns>
+        private bool HandleControlShortcut(Key key)
+        {
+            switch (key)
             {
-                case Key.Left:
-                    Left -= step;
-                    break;
-                case Key.Right:
-                    Left += step;
-                    break;
-                case Key.Up:
-                    Top -= step;
-                    break;
-                case Key.Down:
-                    Top += step;
-                    break;
+                case Key.R:
+                    _viewModel.ResetPositionCommand.Execute(null);
+                    SyncWindowToViewModelPosition();
+                    return true;
+
+                case Key.C:
+                    _viewModel.CopyMeasurementCommand.Execute(null);
+                    return true;
+
+                case Key.T:
+                    _viewModel.CycleOpacityCommand.Execute(null);
+                    return true;
+
+                case Key.M:
+                    _viewModel.ToggleMagnifierCommand.Execute(null);
+                    return true;
+
+                case Key.S:
+                    _viewModel.ToggleEdgeSnappingCommand.Execute(null);
+                    return true;
+
+                case Key.P:
+                    EnterPointToPointMode();
+                    return true;
+
+                case Key.G:
+                    _viewModel.ClearGuidesCommand.Execute(null);
+                    return true;
+
+                case Key.Q:
+                    Close();
+                    return true;
+
                 default:
-                    return;
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Moves the ruler by a keyboard step.
+        /// </summary>
+        /// <returns>True when the key was an arrow key.</returns>
+        private bool TryNudge(Key key, int step)
+        {
+            double deltaX = 0;
+            double deltaY = 0;
+
+            switch (key)
+            {
+                case Key.Left: deltaX = -step; break;
+                case Key.Right: deltaX = step; break;
+                case Key.Up: deltaY = -step; break;
+                case Key.Down: deltaY = step; break;
+                default: return false;
             }
 
-            _viewModel.PositionX = (int)Left;
-            _viewModel.PositionY = (int)Top;
-            e.Handled = true;
+            // The step is a count of real pixels, matching what the ruler measures.
+            Left += ScreenHelper.ToLogical(deltaX, _pixelScale);
+            Top += ScreenHelper.ToLogical(deltaY, _pixelScale);
+            StoreWindowPosition();
+            return true;
+        }
+
+        #endregion
+
+        #region Position
+
+        /// <summary>
+        /// Records the window's current position in the ViewModel, converting from WPF's
+        /// device-independent units to the physical pixels the config file stores.
+        /// </summary>
+        private void StoreWindowPosition()
+        {
+            _viewModel.PositionX = (int)Math.Round(ScreenHelper.ToPhysical(Left, _pixelScale));
+            _viewModel.PositionY = (int)Math.Round(ScreenHelper.ToPhysical(Top, _pixelScale));
+        }
+
+        /// <summary>
+        /// Moves the window to the position currently held by the ViewModel.
+        /// </summary>
+        private void SyncWindowToViewModelPosition()
+        {
+            Left = ScreenHelper.ToLogical(_viewModel.PositionX, _pixelScale);
+            Top = ScreenHelper.ToLogical(_viewModel.PositionY, _pixelScale);
         }
 
         #endregion
@@ -431,77 +578,74 @@ namespace RulerOverlay.Windows
 
         private void Window_MouseDown(object sender, MouseButtonEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] Button={e.ChangedButton}, IsResizing={_isResizing}");
-            System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] OriginalSource Type={e.OriginalSource?.GetType().Name}");
-            System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] Source Type={e.Source?.GetType().Name}");
+            if (e.ChangedButton != MouseButton.Left || _isResizing)
+                return;
 
-            if (e.ChangedButton == MouseButton.Left && !_isResizing)
+            // Clicks that land on a toolbar button belong to that button.
+            if (IsWithinButton(e.OriginalSource as DependencyObject))
+                return;
+
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
             {
-                // Check if click is on or inside a button by walking up the visual tree
-                var source = e.OriginalSource as DependencyObject;
-                int depth = 0;
-                while (source != null && source != this)
+                ToggleEdgeGuideAt(e.GetPosition(RootGrid));
+                return;
+            }
+
+            try
+            {
+                DragMove();
+                StoreWindowPosition();
+            }
+            catch (InvalidOperationException ex)
+            {
+                // DragMove throws if the button was already released, or during another drag.
+                System.Diagnostics.Debug.WriteLine($"[RulerWindow] DragMove ignored: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Walks up the visual tree looking for a Button ancestor.
+        /// </summary>
+        private bool IsWithinButton(DependencyObject? source)
+        {
+            while (source != null && source != this)
+            {
+                if (source is Button)
+                    return true;
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Adds a guide at the clicked position, or removes the one already there.
+        /// </summary>
+        private void ToggleEdgeGuideAt(Point position)
+        {
+            // Resolve the target before mutating, rather than removing mid-enumeration.
+            EdgeGuide? existing = null;
+            foreach (var guide in _viewModel.EdgeGuides)
+            {
+                if (Math.Abs(guide.Position - position.X) <= RulerDefaults.GuideHitTolerance)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] Visual tree depth {depth}: {source.GetType().Name}");
-
-                    if (source is System.Windows.Controls.Button button)
-                    {
-                        // Let button handle the click
-                        System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] Found button in tree, returning to let button handle click");
-                        return;
-                    }
-                    source = System.Windows.Media.VisualTreeHelper.GetParent(source);
-                    depth++;
-                }
-
-                System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] No button found in visual tree, proceeding with drag");
-
-                // Check if Shift is pressed to create or remove edge guide
-                if (Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift))
-                {
-                    var position = e.GetPosition(RootGrid);
-
-                    // Check if clicking near an existing guide (within 6px) to remove it
-                    Models.EdgeGuide? guideToRemove = null;
-                    foreach (var existing in _viewModel.EdgeGuides)
-                    {
-                        if (Math.Abs(existing.Position - position.X) <= 6)
-                        {
-                            guideToRemove = existing;
-                            break;
-                        }
-                    }
-
-                    if (guideToRemove != null)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] Shift pressed near existing guide at {guideToRemove.Position}, removing it");
-                        _viewModel.EdgeGuides.Remove(guideToRemove);
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] Shift pressed, creating edge guide");
-                        var guide = new Models.EdgeGuide(position.X, $"{position.X:F0}px");
-                        _viewModel.EdgeGuides.Add(guide);
-                    }
-                    return;
-                }
-
-                // Allow dragging the window
-                System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] Starting drag");
-                try
-                {
-                    DragMove();
-
-                    // Update position in ViewModel after drag
-                    _viewModel.PositionX = (int)Left;
-                    _viewModel.PositionY = (int)Top;
-                }
-                catch (Exception ex)
-                {
-                    // DragMove can throw if window is already being dragged
-                    System.Diagnostics.Debug.WriteLine($"[Window_MouseDown] DragMove exception: {ex.Message}");
+                    existing = guide;
+                    break;
                 }
             }
+
+            if (existing != null)
+            {
+                _viewModel.EdgeGuides.Remove(existing);
+                return;
+            }
+
+            if (position.X < 0 || position.X > _viewModel.Width)
+                return;
+
+            var label = new MeasurementEngine(_viewModel.Ppi).Format(position.X, _viewModel.Unit);
+            _viewModel.EdgeGuides.Add(new EdgeGuide(position.X, label));
         }
 
         #endregion
@@ -509,12 +653,13 @@ namespace RulerOverlay.Windows
         #region Edge Resize
 
         /// <summary>
-        /// Begins a resize operation by expanding the window to cover the screen.
-        /// This allows the resize to happen entirely through WPF transforms (no SetWindowPos
-        /// during drag), eliminating the visual jump caused by DWM showing stale buffer content
-        /// at a new window position.
+        /// Begins a resize by expanding the window to fill the screen.
+        ///
+        /// With the window already covering the screen, the drag can be expressed entirely
+        /// as WPF transforms. Calling SetWindowPos on every mouse move instead makes DWM
+        /// briefly present the previous frame at the new position, which reads as a jump.
         /// </summary>
-        private void BeginResize(bool isLeftEdge, MouseButtonEventArgs e, UIElement sender)
+        private void BeginResize(bool isLeftEdge, MouseButtonEventArgs e, UIElement handle)
         {
             _isResizing = true;
             _isLeftEdge = isLeftEdge;
@@ -523,12 +668,15 @@ namespace RulerOverlay.Windows
             _resizeStartScreenPoint = PointToScreen(e.GetPosition(this));
             _initialWidth = _viewModel.Width;
 
-            // Compute anchor point (the ruler edge that should stay fixed)
-            double angleRad = _viewModel.Rotation * Math.PI / 180.0;
+            // The ruler edge that must stay put while the opposite edge follows the mouse.
+            // Left/Top and TranslationTransform are DIPs, so the ruler length is converted.
+            var (cos, sin) = GetRotationVector(_viewModel.Rotation);
+            double lengthDip = ScreenHelper.ToLogical(_viewModel.Width, _pixelScale);
+
             if (isLeftEdge)
             {
-                _anchorX = Left + _viewModel.Width * Math.Cos(angleRad) + TranslationTransform.X;
-                _anchorY = Top + _viewModel.Width * Math.Sin(angleRad) + TranslationTransform.Y;
+                _anchorX = Left + lengthDip * cos + TranslationTransform.X;
+                _anchorY = Top + lengthDip * sin + TranslationTransform.Y;
             }
             else
             {
@@ -536,19 +684,12 @@ namespace RulerOverlay.Windows
                 _anchorY = Top + TranslationTransform.Y;
             }
 
-            // Compute expansion parameters now (while window is at original position)
-            var screenPoint = PointToScreen(new Point(0, 0));
-            var screen = WinForms.Screen.FromPoint(
-                new Drawing.Point((int)screenPoint.X, (int)screenPoint.Y));
+            // Work out the expansion while the window is still at its original position.
+            var origin = PointToScreen(new Point(0, 0));
+            var screenBounds = ScreenHelper.GetScreenBoundsFromPhysicalPoint(origin.X, origin.Y);
 
-            var source = PresentationSource.FromVisual(this);
-            double dpiScaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-            double dpiScaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
-
-            double scrLeft = screen.Bounds.Left / dpiScaleX;
-            double scrTop = screen.Bounds.Top / dpiScaleY;
-            double scrWidth = screen.Bounds.Width / dpiScaleX;
-            double scrHeight = screen.Bounds.Height / dpiScaleY;
+            double scrLeft = ScreenHelper.ToLogical(screenBounds.Left, _pixelScale);
+            double scrTop = ScreenHelper.ToLogical(screenBounds.Top, _pixelScale);
 
             _lastResizeLeft = scrLeft;
             _lastResizeTop = scrTop;
@@ -556,23 +697,19 @@ namespace RulerOverlay.Windows
             double newTransX = TranslationTransform.X + (Left - scrLeft);
             double newTransY = TranslationTransform.Y + (Top - scrTop);
 
-            // Phase 1: Make content invisible. WPF will render a transparent bitmap
-            // on the next render pass and submit it to DWM.
+            // Phase 1: hide the content so WPF submits a transparent frame to DWM.
             RootGrid.Opacity = 0;
 
-            sender.CaptureMouse();
+            handle.CaptureMouse();
             e.Handled = true;
 
-            System.Diagnostics.Debug.WriteLine($"[BeginResize] Phase1: Edge={(_isLeftEdge ? "LEFT" : "RIGHT")}, Anchor=({_anchorX:F1},{_anchorY:F1}), Opacity=0 set");
-
-            // Phase 2: After WPF renders the transparent frame, expand the window.
-            // DWM now has a transparent buffer, so SetWindowPos won't show a stale ruler
-            // at the wrong position.
-            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
+            // Phase 2: once that transparent frame is up, grow the window. DWM now has
+            // nothing stale to show at the new position.
+            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
             {
                 if (!_isResizing)
                 {
-                    // User released mouse before expansion — just restore opacity
+                    // The button came back up before expansion; just restore the content.
                     RootGrid.Opacity = 1;
                     return;
                 }
@@ -581,133 +718,197 @@ namespace RulerOverlay.Windows
                 TranslationTransform.Y = newTransY;
 
                 var hwnd = new WindowInteropHelper(this).Handle;
-                const uint SWP_NOZORDER = 0x0004;
-                const uint SWP_NOACTIVATE = 0x0010;
-                Win32Helper.SetWindowPos(hwnd, IntPtr.Zero,
-                    (int)(scrLeft * dpiScaleX),
-                    (int)(scrTop * dpiScaleY),
-                    (int)(scrWidth * dpiScaleX),
-                    (int)(scrHeight * dpiScaleY),
-                    SWP_NOZORDER | SWP_NOACTIVATE);
+                if (hwnd != IntPtr.Zero)
+                {
+                    Win32Helper.SetWindowPos(hwnd, IntPtr.Zero,
+                        screenBounds.Left, screenBounds.Top,
+                        screenBounds.Width, screenBounds.Height,
+                        Win32Helper.SWP_NOZORDER | Win32Helper.SWP_NOACTIVATE);
+                }
 
                 RootGrid.Opacity = 1;
                 _resizeExpanded = true;
-
-                System.Diagnostics.Debug.WriteLine($"[BeginResize] Phase2: Expanded to ({scrLeft:F0},{scrTop:F0},{scrWidth:F0}x{scrHeight:F0}), NewTrans=({newTransX:F1},{newTransY:F1}), Opacity=1 restored");
             });
         }
 
         private void LeftResizeHandle_MouseDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ChangedButton == MouseButton.Left)
-                BeginResize(true, e, (UIElement)sender);
+                BeginResize(isLeftEdge: true, e, (UIElement)sender);
         }
 
         private void RightResizeHandle_MouseDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ChangedButton == MouseButton.Left)
-                BeginResize(false, e, (UIElement)sender);
+                BeginResize(isLeftEdge: false, e, (UIElement)sender);
         }
 
         private void ResizeHandle_MouseMove(object sender, MouseEventArgs e)
         {
-            if (_isResizing && _resizeExpanded && e.LeftButton == MouseButtonState.Pressed)
+            if (!_isResizing || !_resizeExpanded || e.LeftButton != MouseButtonState.Pressed)
+                return;
+
+            // Screen coordinates, so a change in window position cannot skew the delta.
+            // These are physical pixels, which is exactly the unit Width is measured in,
+            // so the drag distance needs no conversion.
+            var currentScreenPoint = PointToScreen(e.GetPosition(this));
+
+            double deltaX = currentScreenPoint.X - _resizeStartScreenPoint.X;
+            double deltaY = currentScreenPoint.Y - _resizeStartScreenPoint.Y;
+
+            var (cos, sin) = GetRotationVector(_viewModel.Rotation);
+
+            // Project the mouse movement onto the ruler's own axis.
+            double delta = deltaX * cos + deltaY * sin;
+            double newWidth = _isLeftEdge ? _initialWidth - delta : _initialWidth + delta;
+
+            newWidth = TrySnapWidth(newWidth, currentScreenPoint, cos);
+
+            int newRulerWidth = (int)Math.Max(RulerDefaults.MinWidth, newWidth);
+            double newLengthDip = ScreenHelper.ToLogical(newRulerWidth, _pixelScale);
+
+            // Keep the anchored edge fixed inside the expanded window.
+            if (_isLeftEdge)
             {
-                // Use screen coordinates so window position changes don't affect the delta
-                var currentScreenPoint = PointToScreen(e.GetPosition(this));
-
-                // Calculate delta in screen coordinates
-                var screenDeltaX = currentScreenPoint.X - _resizeStartScreenPoint.X;
-                var screenDeltaY = currentScreenPoint.Y - _resizeStartScreenPoint.Y;
-
-                // Convert screen (physical) delta to logical (WPF) units for DPI correctness
-                var source = PresentationSource.FromVisual(this);
-                double dpiScaleX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
-                double dpiScaleY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
-                var deltaX = screenDeltaX / dpiScaleX;
-                var deltaY = screenDeltaY / dpiScaleY;
-
-                // Transform delta based on rotation angle to get delta along ruler axis
-                double angleRad = _viewModel.Rotation * Math.PI / 180.0;
-                double cos = Math.Cos(angleRad);
-                double sin = Math.Sin(angleRad);
-
-                // Project the mouse movement onto the ruler's X axis (width direction)
-                double delta = deltaX * cos + deltaY * sin;
-
-                // Compute new ruler width
-                int newRulerWidth = (int)Math.Max(100, _isLeftEdge ? _initialWidth - delta : _initialWidth + delta);
-
-                // Compute TranslationTransform so the anchor stays fixed within the expanded window.
-                // The expanded window's Left/Top are stored in _lastResizeLeft/_lastResizeTop.
-                double newTransX, newTransY;
-                if (_isLeftEdge)
-                {
-                    // Anchor = END of ruler. End in window coords = (W*cos + transX, W*sin + transY)
-                    // anchorX = expandedLeft + W*cos + transX  =>  transX = anchorX - expandedLeft - W*cos
-                    newTransX = _anchorX - _lastResizeLeft - newRulerWidth * cos;
-                    newTransY = _anchorY - _lastResizeTop - newRulerWidth * sin;
-                }
-                else
-                {
-                    // Anchor = START of ruler. Start in window coords = (transX, transY)
-                    // anchorX = expandedLeft + transX  =>  transX = anchorX - expandedLeft
-                    newTransX = _anchorX - _lastResizeLeft;
-                    newTransY = _anchorY - _lastResizeTop;
-                }
-
-                System.Diagnostics.Debug.WriteLine($"[Resize_Move] Edge={(_isLeftEdge ? "LEFT" : "RIGHT")}, NewWidth={newRulerWidth}, Trans=({newTransX:F1},{newTransY:F1}), Anchor=({_anchorX:F1},{_anchorY:F1})");
-
-                // Update TranslationTransform and ViewModel width.
-                // NO SetWindowPos here! The window stays at screen size.
-                // All visual changes happen through WPF transforms, which render atomically.
-                TranslationTransform.X = newTransX;
-                TranslationTransform.Y = newTransY;
-                _viewModel.Width = newRulerWidth;
-
-                e.Handled = true;
+                // Anchor is the far end: anchorX = expandedLeft + length + transX
+                TranslationTransform.X = _anchorX - _lastResizeLeft - newLengthDip * cos;
+                TranslationTransform.Y = _anchorY - _lastResizeTop - newLengthDip * sin;
             }
+            else
+            {
+                // Anchor is the near end: anchorX = expandedLeft + transX
+                TranslationTransform.X = _anchorX - _lastResizeLeft;
+                TranslationTransform.Y = _anchorY - _lastResizeTop;
+            }
+
+            // The Width setter raises PropertyChanged, which redraws the markings.
+            _viewModel.Width = newRulerWidth;
+
+            e.Handled = true;
+        }
+
+        /// <summary>Height of the strip scanned for colour boundaries, in physical pixels.</summary>
+        private const int SnapScanBandHeight = 24;
+
+        /// <summary>Gap between the ruler body and the scanned strip, in physical pixels.</summary>
+        private const int SnapScanBandGap = 2;
+
+        /// <summary>
+        /// Nudges the dragged width so the ruler's moving edge lands on a colour boundary
+        /// in the content being measured.
+        ///
+        /// The correction is measured against the ruler's own edge, not the mouse cursor.
+        /// The grab handle is several pixels wide, so the cursor generally sits a little
+        /// inside the edge; snapping the cursor instead would leave the ruler overhanging
+        /// the target by exactly that offset.
+        ///
+        /// The strip that gets scanned sits just outside the ruler body rather than under
+        /// it. During a resize the window is expanded to cover the screen and the ruler is
+        /// drawn opaque, so scanning under it would only ever rediscover the ruler's own
+        /// edge. The element being measured almost always extends past the ruler, so a
+        /// strip immediately below or above it sees the real boundary; both are tried
+        /// because either one can fall outside the target.
+        ///
+        /// Only applied while the ruler is axis-aligned: the detector looks for vertical
+        /// edges, which is only meaningful when the ruler's own edge is vertical.
+        /// </summary>
+        private double TrySnapWidth(double proposedWidth, Point cursorScreenPoint, double cos)
+        {
+            if (!_viewModel.EdgeSnappingEnabled)
+                return proposedWidth;
+
+            int rotation = RulerDefaults.NormalizeRotation(_viewModel.Rotation);
+            if (rotation != 0 && rotation != 180)
+                return proposedWidth;
+
+            // Where the dragged edge currently sits, in physical screen pixels. The anchor
+            // is the opposite (stationary) end, held in DIP screen coordinates.
+            double anchorScreenX = ScreenHelper.ToPhysical(_anchorX, _pixelScale);
+            double edgeScreenX = _isLeftEdge
+                ? anchorScreenX - proposedWidth * cos
+                : anchorScreenX + proposedWidth * cos;
+
+            var snappedX = FindEdgeNear(edgeScreenX, cursorScreenPoint);
+            if (snappedX == null)
+                return proposedWidth;
+
+            double correction = (snappedX.Value - edgeScreenX) * cos;
+            return _isLeftEdge ? proposedWidth - correction : proposedWidth + correction;
+        }
+
+        /// <summary>
+        /// Looks for a colour boundary near <paramref name="edgeScreenX"/> in the strips
+        /// immediately below and above the ruler, returning whichever candidate is closest.
+        /// </summary>
+        private double? FindEdgeNear(double edgeScreenX, Point cursorScreenPoint)
+        {
+            // Screen extent of the ruler body, so the scan can avoid it.
+            var rulerTopLeft = RootGrid.PointToScreen(new Point(0, 0));
+            var rulerBottomLeft = RootGrid.PointToScreen(new Point(0, _viewModel.Height));
+            double rulerTop = Math.Min(rulerTopLeft.Y, rulerBottomLeft.Y);
+            double rulerBottom = Math.Max(rulerTopLeft.Y, rulerBottomLeft.Y);
+
+            var screen = ScreenHelper.GetScreenBoundsFromPhysicalPoint(cursorScreenPoint.X, cursorScreenPoint.Y);
+
+            double belowTop = rulerBottom + SnapScanBandGap;
+            double aboveTop = rulerTop - SnapScanBandGap - SnapScanBandHeight;
+
+            double? best = null;
+            double bestDistance = double.MaxValue;
+
+            foreach (var bandTop in new[] { belowTop, aboveTop })
+            {
+                if (bandTop < screen.Top || bandTop + SnapScanBandHeight > screen.Bottom)
+                    continue;
+
+                var candidate = _edgeSnapping.FindNearestVerticalEdge(
+                    edgeScreenX, bandTop, SnapScanBandHeight);
+
+                if (candidate == null)
+                    continue;
+
+                double distance = Math.Abs(candidate.Value - edgeScreenX);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = candidate;
+                }
+            }
+
+            return best;
         }
 
         private void ResizeHandle_MouseUp(object sender, MouseButtonEventArgs e)
         {
-            if (_isResizing)
+            if (!_isResizing)
+                return;
+
+            _isResizing = false;
+            _suppressWindowSizeUpdate = false;
+            ((UIElement)sender).ReleaseMouseCapture();
+
+            // Shrink back to the exact bounding box for the final ruler size.
+            AdjustWindowSizeForRotation(_viewModel.Rotation);
+
+            // Place the window so the anchored edge ends up where it started.
+            var (cos, sin) = GetRotationVector(_viewModel.Rotation);
+            double lengthDip = ScreenHelper.ToLogical(_viewModel.Width, _pixelScale);
+
+            if (_isLeftEdge)
             {
-                _isResizing = false;
-                _suppressWindowSizeUpdate = false;
-                ((UIElement)sender).ReleaseMouseCapture();
-
-                // Shrink window back to the exact bounding box for the final ruler size.
-                // AdjustWindowSizeForRotation computes bounding box, sets Width/Height and TranslationTransform.
-                AdjustWindowSizeForRotation(_viewModel.Rotation);
-
-                // Compute final window position from anchor
-                double angleRad = _viewModel.Rotation * Math.PI / 180.0;
-                double cos = Math.Cos(angleRad);
-                double sin = Math.Sin(angleRad);
-                double finalLeft, finalTop;
-                if (_isLeftEdge)
-                {
-                    double endWindowX = _viewModel.Width * cos + TranslationTransform.X;
-                    double endWindowY = _viewModel.Width * sin + TranslationTransform.Y;
-                    finalLeft = _anchorX - endWindowX;
-                    finalTop = _anchorY - endWindowY;
-                }
-                else
-                {
-                    finalLeft = _anchorX - TranslationTransform.X;
-                    finalTop = _anchorY - TranslationTransform.Y;
-                }
-
-                Left = finalLeft;
-                Top = finalTop;
-                _viewModel.PositionX = (int)finalLeft;
-                _viewModel.PositionY = (int)finalTop;
-
-                System.Diagnostics.Debug.WriteLine($"[Resize_Up] FinalWidth={_viewModel.Width}, FinalPos=({finalLeft:F1},{finalTop:F1})");
-
-                e.Handled = true;
+                Left = _anchorX - (lengthDip * cos + TranslationTransform.X);
+                Top = _anchorY - (lengthDip * sin + TranslationTransform.Y);
             }
+            else
+            {
+                Left = _anchorX - TranslationTransform.X;
+                Top = _anchorY - TranslationTransform.Y;
+            }
+
+            RootGrid.Opacity = 1;
+            StoreWindowPosition();
+
+            e.Handled = true;
         }
 
         #endregion
@@ -716,19 +917,52 @@ namespace RulerOverlay.Windows
 
         private void CalibrateScreen_Click(object sender, RoutedEventArgs e)
         {
-            var calibrationDialog = new CalibrationDialog(_viewModel.Ppi)
-            {
-                Owner = this
-            };
+            var dialog = new CalibrationDialog(_viewModel.Ppi) { Owner = this };
 
-            if (calibrationDialog.ShowDialog() == true)
-            {
-                _viewModel.Ppi = calibrationDialog.CalibratedPpi;
-                MessageBox.Show($"Screen calibrated! New PPI: {calibrationDialog.CalibratedPpi}",
-                    "Calibration Complete",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-            }
+            if (dialog.ShowDialog() != true)
+                return;
+
+            _viewModel.Ppi = dialog.CalibratedPpi;
+
+            // A toast is less disruptive than a modal box for a confirmation.
+            ShowToast($"Calibrated to {_viewModel.Ppi} PPI");
+        }
+
+        #endregion
+
+        #region Toast
+
+        private void ViewModel_MeasurementCopied(object? sender, string measurement) =>
+            ShowToast($"Copied: {measurement}");
+
+        /// <summary>
+        /// Shows a transient message just below the ruler.
+        /// </summary>
+        private void ShowToast(string message)
+        {
+            if (_isClosing)
+                return;
+
+            var dpi = ScreenHelper.GetDpiScale(this);
+            var origin = PointToScreen(new Point(0, 0));
+            var work = ScreenHelper.GetWorkingAreaFromPhysicalPoint(origin.X, origin.Y);
+
+            // Popup offsets for Placement="Absolute" are device-independent units,
+            // so the physical working area has to be converted before use.
+            double workLeft = ScreenHelper.ToLogical(work.Left, dpi.X);
+            double workTop = ScreenHelper.ToLogical(work.Top, dpi.Y);
+            double workWidth = ScreenHelper.ToLogical(work.Width, dpi.X);
+            double workBottom = ScreenHelper.ToLogical(work.Bottom, dpi.Y);
+
+            const double toastWidth = 240;
+            double desiredX = Left + (ActualWidth - toastWidth) / 2;
+            double desiredY = Top + ActualHeight + 8;
+
+            ToastPopup.HorizontalOffset = Math.Clamp(desiredX, workLeft, workLeft + workWidth - toastWidth);
+            ToastPopup.VerticalOffset = Math.Min(desiredY, workBottom - 60);
+            ToastPopup.IsOpen = true;
+
+            Toast.ShowMessage(message);
         }
 
         #endregion
@@ -737,91 +971,75 @@ namespace RulerOverlay.Windows
 
         private void RulerWindow_MouseMove(object sender, MouseEventArgs e)
         {
-            // Only show magnifier if enabled
-            if (!_viewModel.MagnifierEnabled)
+            if (!_viewModel.MagnifierEnabled || _isResizing)
             {
                 HideMagnifier();
                 return;
             }
 
-            // Use position relative to the ruler grid so rotation is accounted for
+            // Measured against RootGrid so the ruler's rotation is already accounted for.
             var position = e.GetPosition(RootGrid);
-            const double edgeThreshold = 15.0;
 
             double rulerWidth = _viewModel.Width;
             double rulerHeight = _viewModel.Height;
+            const double threshold = RulerDefaults.MagnifierEdgeThreshold;
 
-            // Check if mouse is within the ruler bounds
             bool insideRuler = position.X >= 0 && position.X <= rulerWidth &&
                                position.Y >= 0 && position.Y <= rulerHeight;
 
-            // Check if near any edge of the ruler
             bool nearEdge = insideRuler && (
-                position.X <= edgeThreshold ||
-                position.X >= rulerWidth - edgeThreshold ||
-                position.Y <= edgeThreshold ||
-                position.Y >= rulerHeight - edgeThreshold);
+                position.X <= threshold ||
+                position.X >= rulerWidth - threshold ||
+                position.Y <= threshold ||
+                position.Y >= rulerHeight - threshold);
 
-            if (nearEdge)
-            {
-                ShowMagnifier();
-                Magnifier.UpdatePosition(position.X, _viewModel.Unit, _viewModel.Ppi);
-            }
-            else
+            if (!nearEdge)
             {
                 HideMagnifier();
+                return;
             }
+
+            ShowMagnifier();
+            Magnifier.UpdatePosition(position.X, _viewModel.Width, _viewModel.Unit, _viewModel.Ppi);
         }
 
-        private void RulerWindow_MouseLeave(object sender, MouseEventArgs e)
-        {
-            HideMagnifier();
-        }
+        private void RulerWindow_MouseLeave(object sender, MouseEventArgs e) => HideMagnifier();
 
         private void ShowMagnifier()
         {
             if (!MagnifierPopup.IsOpen)
             {
-                // Pass the ruler's rotation so the magnifier image matches
-                Magnifier.Rotation = _viewModel.Rotation;
-
                 MagnifierPopup.IsOpen = true;
                 Magnifier.Start();
             }
 
-            // Reposition every time the mouse moves so it stays out of the way
             UpdateMagnifierPosition();
         }
 
+        /// <summary>
+        /// Parks the magnifier in a corner of the current monitor, away from the cursor.
+        /// </summary>
         private void UpdateMagnifierPosition()
         {
-            const double magnifierSize = 200;
+            const double size = RulerDefaults.MagnifierSize;
             const double margin = 10;
 
-            // Get the monitor the ruler is currently on
-            var mouseScreenPos = PointToScreen(Mouse.GetPosition(this));
-            var screen = WinForms.Screen.FromPoint(
-                new Drawing.Point((int)mouseScreenPos.X, (int)mouseScreenPos.Y));
-            var work = screen.WorkingArea;
+            var cursorScreen = PointToScreen(Mouse.GetPosition(this));
+            var work = ScreenHelper.GetWorkingAreaFromPhysicalPoint(cursorScreen.X, cursorScreen.Y);
+            var dpi = ScreenHelper.GetDpiScale(this);
 
-            // Default: bottom-right corner of the current monitor
-            double targetX = work.Right - magnifierSize - margin;
-            double targetY = work.Bottom - magnifierSize - margin;
+            // Popup offsets are in device-independent units; the working area is physical.
+            double workLeft = ScreenHelper.ToLogical(work.Left, dpi.X);
+            double workTop = ScreenHelper.ToLogical(work.Top, dpi.Y);
+            double workRight = ScreenHelper.ToLogical(work.Right, dpi.X);
+            double workBottom = ScreenHelper.ToLogical(work.Bottom, dpi.Y);
 
-            // If the mouse is near the bottom-right quadrant, move magnifier to bottom-left
-            double midX = work.Left + work.Width / 2.0;
-            double midY = work.Top + work.Height / 2.0;
-            bool mouseInRightHalf = mouseScreenPos.X > midX;
-            bool mouseInBottomHalf = mouseScreenPos.Y > midY;
+            bool cursorInRightHalf = cursorScreen.X > work.Left + work.Width / 2.0;
+            bool cursorInBottomHalf = cursorScreen.Y > work.Top + work.Height / 2.0;
 
-            if (mouseInRightHalf && mouseInBottomHalf)
-            {
-                targetX = work.Left + margin;
-            }
-            else if (!mouseInRightHalf && mouseInBottomHalf)
-            {
-                targetX = work.Right - magnifierSize - margin;
-            }
+            // Keep the magnifier out from under the cursor: prefer the opposite corner.
+            double targetX = cursorInRightHalf ? workLeft + margin : workRight - size - margin;
+            double targetY = cursorInBottomHalf ? workTop + margin : workBottom - size - margin;
 
             MagnifierPopup.HorizontalOffset = targetX;
             MagnifierPopup.VerticalOffset = targetY;
@@ -829,68 +1047,51 @@ namespace RulerOverlay.Windows
 
         private void HideMagnifier()
         {
-            if (MagnifierPopup.IsOpen)
-            {
-                MagnifierPopup.IsOpen = false;
-                Magnifier.Stop();
-            }
+            if (!MagnifierPopup.IsOpen)
+                return;
+
+            MagnifierPopup.IsOpen = false;
+            Magnifier.Stop();
         }
 
         #endregion
 
         #region Point-to-Point Mode
 
-        private void PointToPointMode_Click(object sender, RoutedEventArgs e)
+        private void PointToPointMode_Click(object sender, RoutedEventArgs e) => EnterPointToPointMode();
+
+        private void EnterPointToPointMode()
         {
-            System.Diagnostics.Debug.WriteLine("[PointToPointMode_Click] BUTTON CLICKED!");
+            HideMagnifier();
 
-            // Create point-to-point window
             var viewModel = new PointToPointViewModel(
-                new Services.MeasurementEngine(_viewModel.Ppi),
-                _viewModel.Unit,
-                _viewModel.Ppi
-            );
+                new MeasurementEngine(_viewModel.Ppi),
+                _viewModel.Unit);
 
-            var pointToPointWindow = new PointToPointWindow(viewModel)
+            var window = new PointToPointWindow(viewModel) { Owner = this };
+
+            // The ruler would otherwise sit on top of the measurement overlay.
+            Visibility = Visibility.Hidden;
+            try
             {
-                Owner = this
-            };
-
-            // Hide ruler while in point-to-point mode
-            this.Visibility = Visibility.Hidden;
-
-            pointToPointWindow.ShowDialog();
-
-            // Show ruler again after point-to-point mode exits
-            this.Visibility = Visibility.Visible;
+                window.ShowDialog();
+            }
+            finally
+            {
+                // Restore even if the dialog throws, so the ruler cannot be left invisible.
+                Visibility = Visibility.Visible;
+            }
         }
 
         #endregion
 
         #region Help
 
-        private void ShowHelp_Click(object sender, RoutedEventArgs e)
-        {
-            ShowHelpWindow();
-        }
+        private void ShowHelp_Click(object sender, RoutedEventArgs e) => ShowHelpWindow();
 
         private void ShowHelpWindow()
         {
-            var helpWindow = new HelpWindow
-            {
-                Owner = this
-            };
-            helpWindow.ShowDialog();
-        }
-
-        #endregion
-
-        #region Close
-
-        private void CloseApp_Click(object sender, RoutedEventArgs e)
-        {
-            System.Diagnostics.Debug.WriteLine("[CloseApp_Click] BUTTON CLICKED!");
-            Close();
+            new HelpWindow { Owner = this }.ShowDialog();
         }
 
         #endregion

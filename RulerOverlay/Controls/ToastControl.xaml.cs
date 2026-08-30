@@ -1,37 +1,44 @@
 using System;
-using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Animation;
 
 namespace RulerOverlay.Controls
 {
-    public partial class ToastControl : System.Windows.Controls.UserControl
+    /// <summary>
+    /// Transient confirmation banner, e.g. after copying a measurement.
+    /// </summary>
+    public partial class ToastControl : UserControl
     {
+        private Storyboard? _storyboard;
+
+        /// <summary>
+        /// Raised once the toast has finished fading out, so a host can hide or
+        /// close whatever is presenting it.
+        /// </summary>
+        public event EventHandler? Dismissed;
+
         public ToastControl()
         {
             InitializeComponent();
         }
 
         /// <summary>
-        /// Shows the toast with a message
+        /// Shows a message, fading it in and back out. Calling this again while a toast
+        /// is on screen restarts the animation with the new message.
         /// </summary>
-        public void Show(string message)
+        public void ShowMessage(string message)
         {
             MessageText.Text = message;
 
-            // Get storyboards
-            var fadeIn = (Storyboard)Resources["FadeInStoryboard"];
-            var fadeOut = (Storyboard)Resources["FadeOutStoryboard"];
+            if (_storyboard == null)
+            {
+                _storyboard = (Storyboard)Resources["ToastStoryboard"];
+                _storyboard.Completed += (_, _) => Dismissed?.Invoke(this, EventArgs.Empty);
+            }
 
-            // Stop any existing animations
-            fadeIn.Stop(this);
-            fadeOut.Stop(this);
-
-            // Start fade in animation
-            fadeIn.Begin(this);
-
-            // Start fade out animation (will wait 1.7s before fading out)
-            fadeOut.Begin(this);
+            // Restart rather than layer a second animation over the first.
+            _storyboard.Stop(this);
+            _storyboard.Begin(this, isControllable: true);
         }
     }
 }

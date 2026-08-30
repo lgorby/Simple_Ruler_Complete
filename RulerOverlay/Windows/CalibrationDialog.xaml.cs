@@ -1,14 +1,18 @@
 using RulerOverlay.ViewModels;
 using System.Windows;
-using KeyEventArgs = System.Windows.Input.KeyEventArgs;
-using Key = System.Windows.Input.Key;
 
 namespace RulerOverlay.Windows
 {
+    /// <summary>
+    /// Asks the user for their screen's physical diagonal and derives a PPI from it.
+    /// </summary>
     public partial class CalibrationDialog : Window
     {
         private readonly CalibrationViewModel _viewModel;
 
+        /// <summary>
+        /// The PPI to apply. Only meaningful when ShowDialog returned true.
+        /// </summary>
         public int CalibratedPpi { get; private set; }
 
         public CalibrationDialog(int currentPpi)
@@ -18,46 +22,23 @@ namespace RulerOverlay.Windows
             _viewModel = new CalibrationViewModel(currentPpi);
             DataContext = _viewModel;
 
-            // Focus the input box when dialog opens
-            Loaded += (s, e) => DiagonalTextBox.Focus();
-
-            // Allow Enter key to calibrate
-            DiagonalTextBox.KeyDown += DiagonalTextBox_KeyDown;
-        }
-
-        private void DiagonalTextBox_KeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key == Key.Enter && _viewModel.CanCalibrate)
+            // Enter and Esc are handled by the buttons' IsDefault/IsCancel, which work
+            // regardless of which control has focus.
+            Loaded += (_, _) =>
             {
-                ApplyCalibration();
-            }
-            else if (e.Key == Key.Escape)
-            {
-                DialogResult = false;
-                Close();
-            }
+                DiagonalTextBox.Focus();
+                DiagonalTextBox.SelectAll();
+            };
         }
 
         private void CalibrateButton_Click(object sender, RoutedEventArgs e)
         {
-            ApplyCalibration();
-        }
-
-        private void CancelButton_Click(object sender, RoutedEventArgs e)
-        {
-            DialogResult = false;
-            Close();
-        }
-
-        private void ApplyCalibration()
-        {
             var calculatedPpi = _viewModel.CalculatePpi();
-            if (calculatedPpi > 0)
-            {
-                CalibratedPpi = calculatedPpi;
-                DialogResult = true;
-                Close();
-            }
+            if (calculatedPpi <= 0)
+                return;
+
+            CalibratedPpi = calculatedPpi;
+            DialogResult = true;
         }
     }
 }

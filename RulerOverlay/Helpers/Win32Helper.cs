@@ -4,30 +4,26 @@ using System.Runtime.InteropServices;
 namespace RulerOverlay.Helpers
 {
     /// <summary>
-    /// P/Invoke declarations for Win32 APIs
-    /// Used for window management, screen capture, and keyboard shortcuts
+    /// P/Invoke declarations for the Win32 APIs this app uses.
+    /// Only APIs with a live call site are declared here.
     /// </summary>
     public static class Win32Helper
     {
-        // Window Styles
+        #region Constants
+
+        // Window styles
         public const int GWL_EXSTYLE = -20;
         public const int WS_EX_LAYERED = 0x00080000;
-        public const int WS_EX_TRANSPARENT = 0x00000020;
         public const int WS_EX_TOOLWINDOW = 0x00000080;
 
-        // Window Messages
-        public const int WM_HOTKEY = 0x0312;
-        public const int WM_NCACTIVATE = 0x0086;
-        public const int WM_ACTIVATE = 0x0006;
+        // SetWindowPos flags
+        public const uint SWP_NOZORDER = 0x0004;
+        public const uint SWP_NOACTIVATE = 0x0010;
 
-        // Raster Operations
+        // Raster operations
         public const int SRCCOPY = 0x00CC0020;
 
-        // Modifier Keys for Hotkeys
-        public const uint MOD_ALT = 0x0001;
-        public const uint MOD_CONTROL = 0x0002;
-        public const uint MOD_SHIFT = 0x0004;
-        public const uint MOD_WIN = 0x0008;
+        #endregion
 
         #region Window Management
 
@@ -38,6 +34,7 @@ namespace RulerOverlay.Helpers
         public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
         [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool SetWindowPos(
             IntPtr hWnd,
             IntPtr hWndInsertAfter,
@@ -47,12 +44,29 @@ namespace RulerOverlay.Helpers
             int cy,
             uint uFlags);
 
+        #endregion
+
+        #region Cursor
+
+        /// <summary>Cursor position in physical screen pixels.</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT
+        {
+            public int X;
+            public int Y;
+        }
+
         [DllImport("user32.dll")]
-        public static extern bool SetLayeredWindowAttributes(
-            IntPtr hwnd,
-            uint crKey,
-            byte bAlpha,
-            uint dwFlags);
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GetCursorPos(out POINT lpPoint);
+
+        /// <summary>
+        /// Current cursor position in physical screen pixels, or (0,0) if unavailable.
+        /// </summary>
+        public static POINT GetCursorPosition()
+        {
+            return GetCursorPos(out var point) ? point : default;
+        }
 
         #endregion
 
@@ -68,6 +82,7 @@ namespace RulerOverlay.Helpers
         public static extern IntPtr CreateCompatibleDC(IntPtr hdc);
 
         [DllImport("gdi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool DeleteDC(IntPtr hdc);
 
         [DllImport("gdi32.dll")]
@@ -77,9 +92,11 @@ namespace RulerOverlay.Helpers
         public static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
 
         [DllImport("gdi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool DeleteObject(IntPtr hObject);
 
         [DllImport("gdi32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool BitBlt(
             IntPtr hdcDest,
             int nXDest,
@@ -90,25 +107,6 @@ namespace RulerOverlay.Helpers
             int nXSrc,
             int nYSrc,
             int dwRop);
-
-        #endregion
-
-        #region Global Hotkeys
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-        [DllImport("user32.dll", SetLastError = true)]
-        public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-        #endregion
-
-        #region Monitor and Display
-
-        [DllImport("user32.dll")]
-        public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
-
-        public const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
 
         #endregion
     }

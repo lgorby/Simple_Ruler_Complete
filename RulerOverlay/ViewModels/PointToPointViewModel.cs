@@ -1,3 +1,4 @@
+using RulerOverlay.Models;
 using RulerOverlay.Services;
 using System;
 using Point = System.Windows.Point;
@@ -5,51 +6,48 @@ using Point = System.Windows.Point;
 namespace RulerOverlay.ViewModels
 {
     /// <summary>
-    /// ViewModel for point-to-point measurement mode
-    /// Handles measurement line drawing and distance calculation
+    /// ViewModel for point-to-point measurement mode.
+    ///
+    /// Points are held in physical screen pixels, not WPF device-independent pixels,
+    /// so a distance reported as "px" is a real screen pixel count on scaled displays too.
+    /// The view is responsible for converting mouse positions before handing them over.
     /// </summary>
     public class PointToPointViewModel : ViewModelBase
     {
         private readonly MeasurementEngine _measurementEngine;
-        private readonly string _unit;
-        private readonly int _ppi;
+        private readonly MeasurementUnit _unit;
 
         private Point? _startPoint;
         private Point? _currentPoint;
-        private bool _isDrawing = false;
+        private bool _isDrawing;
 
-        public PointToPointViewModel(MeasurementEngine measurementEngine, string unit, int ppi)
+        public PointToPointViewModel(MeasurementEngine measurementEngine, MeasurementUnit unit)
         {
-            _measurementEngine = measurementEngine;
+            _measurementEngine = measurementEngine ?? throw new ArgumentNullException(nameof(measurementEngine));
             _unit = unit;
-            _ppi = ppi;
         }
 
         #region Properties
 
+        /// <summary>Where the drag began, in physical screen pixels.</summary>
         public Point? StartPoint
         {
             get => _startPoint;
             set
             {
                 if (SetProperty(ref _startPoint, value))
-                {
-                    OnPropertyChanged(nameof(Distance));
-                    OnPropertyChanged(nameof(HasMeasurement));
-                }
+                    OnMeasurementChanged();
             }
         }
 
+        /// <summary>Current cursor position, in physical screen pixels.</summary>
         public Point? CurrentPoint
         {
             get => _currentPoint;
             set
             {
                 if (SetProperty(ref _currentPoint, value))
-                {
-                    OnPropertyChanged(nameof(Distance));
-                    OnPropertyChanged(nameof(HasMeasurement));
-                }
+                    OnMeasurementChanged();
             }
         }
 
@@ -59,26 +57,32 @@ namespace RulerOverlay.ViewModels
             set => SetProperty(ref _isDrawing, value);
         }
 
-        public bool HasMeasurement => StartPoint.HasValue && CurrentPoint.HasValue;
+        public bool HasMeasurement => _startPoint.HasValue && _currentPoint.HasValue;
 
-        public string Distance
+        /// <summary>Distance between the two points in physical pixels.</summary>
+        public double DistanceInPixels
         {
             get
             {
-                if (!StartPoint.HasValue || !CurrentPoint.HasValue)
-                    return "";
+                if (!_startPoint.HasValue || !_currentPoint.HasValue)
+                    return 0;
 
-                var dx = CurrentPoint.Value.X - StartPoint.Value.X;
-                var dy = CurrentPoint.Value.Y - StartPoint.Value.Y;
-                var pixels = Math.Sqrt(dx * dx + dy * dy);
-
-                return _unit switch
-                {
-                    "inches" => $"{_measurementEngine.PixelsToInches(pixels):F2} in",
-                    "centimeters" => $"{_measurementEngine.PixelsToCentimeters(pixels):F2} cm",
-                    _ => $"{pixels:F0} px"
-                };
+                var dx = _currentPoint.Value.X - _startPoint.Value.X;
+                var dy = _currentPoint.Value.Y - _startPoint.Value.Y;
+                return Math.Sqrt(dx * dx + dy * dy);
             }
+        }
+
+        /// <summary>Distance formatted in the active unit, e.g. "212 px".</summary>
+        public string Distance => HasMeasurement
+            ? _measurementEngine.Format(DistanceInPixels, _unit)
+            : string.Empty;
+
+        private void OnMeasurementChanged()
+        {
+            OnPropertyChanged(nameof(Distance));
+            OnPropertyChanged(nameof(DistanceInPixels));
+            OnPropertyChanged(nameof(HasMeasurement));
         }
 
         #endregion
@@ -95,21 +99,16 @@ namespace RulerOverlay.ViewModels
         public void UpdateMeasurement(Point point)
         {
             if (IsDrawing)
-            {
                 CurrentPoint = point;
-            }
         }
 
-        public void EndMeasurement()
-        {
-            IsDrawing = false;
-        }
+        public void EndMeasurement() => IsDrawing = false;
 
         public void Clear()
         {
+            IsDrawing = false;
             StartPoint = null;
             CurrentPoint = null;
-            IsDrawing = false;
         }
 
         #endregion

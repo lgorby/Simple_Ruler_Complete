@@ -199,7 +199,7 @@
                     <LineBreak/>
                     <Run Text="• " FontWeight="Bold"/>
                     <Run Text="Rotate: " FontWeight="Bold"/>
-                    <Run Text="Right-click for preset angles (0°, 45°, 90°, 135°, 180°)"/>
+                    <Run Text="Right-click → Rotation, or use the ⤴ button to step through 0°, 45°, 90°, 135°, 180°"/>
                     <LineBreak/>
                     <Run Text="• " FontWeight="Bold"/>
                     <Run Text="Change Unit: " FontWeight="Bold"/>
@@ -223,7 +223,7 @@
                     <LineBreak/>
                     <Run Text="• Distance is shown in current unit while dragging"/>
                     <LineBreak/>
-                    <Run Text="• Press Esc to exit point-to-point mode"/>
+                    <Run Text="• Press Del to clear the line, Esc or right-click to exit"/>
                 </TextBlock>
 
                 <!-- Edge Guides Section -->
@@ -241,9 +241,9 @@
                 <!-- Magnifier Section -->
                 <TextBlock Text="Magnifier" Style="{StaticResource SectionTitleStyle}"/>
                 <TextBlock TextWrapping="Wrap" Margin="0,5">
-                    <Run Text="• Move cursor within 3 pixels of any ruler corner"/>
+                    <Run Text="• Move the cursor within 15 pixels of any ruler edge"/>
                     <LineBreak/>
-                    <Run Text="• Magnifier appears showing 4x zoomed view"/>
+                    <Run Text="• Magnifier appears showing a zoomed view at the configured level"/>
                     <LineBreak/>
                     <Run Text="• Press Ctrl+M to toggle magnifier on/off"/>
                     <LineBreak/>

@@ -5,107 +5,47 @@ using System.Windows.Data;
 namespace RulerOverlay.Converters
 {
     /// <summary>
-    /// Converter to check if a string value equals a parameter
-    /// Used for Unit, Color menu checkmarks
+    /// True when the bound value equals the converter parameter.
+    /// Drives the check marks on the unit, colour, opacity and rotation menu items;
+    /// comparison is done on the string form so one converter covers all of them.
     /// </summary>
-    public class StringEqualsConverter : IValueConverter
+    public class EqualsConverter : IValueConverter
     {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
-            try
-            {
-                if (value == null || parameter == null)
-                    return false;
-
-                return value.ToString()?.Equals(parameter.ToString(), StringComparison.OrdinalIgnoreCase) ?? false;
-            }
-            catch
-            {
+            if (value == null || parameter == null)
                 return false;
-            }
+
+            var left = System.Convert.ToString(value, CultureInfo.InvariantCulture);
+            var right = System.Convert.ToString(parameter, CultureInfo.InvariantCulture);
+
+            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
         }
 
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            return Binding.DoNothing;
-        }
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+            => Binding.DoNothing;
     }
 
     /// <summary>
-    /// Converter to check if an int value equals a parameter
-    /// Used for Opacity, Rotation menu checkmarks
+    /// Picks one of two strings based on a boolean, so a menu item can read
+    /// "Enable X" or "Disable X" from a single toggle property.
+    /// The parameter carries both captions as "whenFalse|whenTrue".
     /// </summary>
-    public class IntEqualsConverter : IValueConverter
+    public class BoolToTextConverter : IValueConverter
     {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        private const char Separator = '|';
+
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         {
-            try
-            {
-                if (value == null || parameter == null)
-                    return false;
+            var options = parameter?.ToString()?.Split(Separator);
+            if (options is not { Length: 2 })
+                return string.Empty;
 
-                int intValue = System.Convert.ToInt32(value);
-                int intParameter = System.Convert.ToInt32(parameter);
-
-                return intValue == intParameter;
-            }
-            catch
-            {
-                return false;
-            }
+            bool isTrue = value is bool flag && flag;
+            return isTrue ? options[1] : options[0];
         }
 
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            return Binding.DoNothing;
-        }
-    }
-
-    /// <summary>
-    /// Converts bool to "Enable/Disable Magnifier" text
-    /// </summary>
-    public class BoolToMagnifierTextConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            try
-            {
-                bool enabled = value is bool && (bool)value;
-                return enabled ? "Disable Magnifier" : "Enable Magnifier";
-            }
-            catch
-            {
-                return "Enable Magnifier";
-            }
-        }
-
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            return Binding.DoNothing;
-        }
-    }
-
-    /// <summary>
-    /// Converts bool to "Enable/Disable Edge Snapping" text
-    /// </summary>
-    public class BoolToEdgeSnappingTextConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            try
-            {
-                bool enabled = value is bool && (bool)value;
-                return enabled ? "Disable Edge Snapping" : "Enable Edge Snapping";
-            }
-            catch
-            {
-                return "Enable Edge Snapping";
-            }
-        }
-
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            return Binding.DoNothing;
-        }
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+            => Binding.DoNothing;
     }
 }

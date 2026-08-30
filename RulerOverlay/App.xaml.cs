@@ -1,30 +1,27 @@
-﻿using RulerOverlay.Helpers;
+using RulerOverlay.Helpers;
 using RulerOverlay.Windows;
 using System.Windows;
 
 namespace RulerOverlay;
 
 /// <summary>
-/// Interaction logic for App.xaml
+/// Application entry point.
 /// </summary>
-public partial class App : System.Windows.Application
+public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
-        // Enable per-monitor DPI awareness V2 for crisp rendering on high-DPI displays
+        // Must run before any window exists, otherwise the process is stuck with the
+        // DPI awareness it started with and the ruler renders blurry on scaled displays.
         DpiHelper.EnablePerMonitorDpiAwarenessV2();
 
         base.OnStartup(e);
 
-        // Set shutdown mode to close when main window closes
+        // The ruler is the only top-level window, so closing it exits the app.
         ShutdownMode = ShutdownMode.OnMainWindowClose;
 
-        // Create and show the ruler window
         var rulerWindow = new RulerWindow();
         MainWindow = rulerWindow;
         rulerWindow.Show();
-
-        System.Diagnostics.Debug.WriteLine("Ruler window created and shown");
     }
 }
-

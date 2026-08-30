@@ -1,110 +1,115 @@
+using RulerOverlay.Models;
 using System;
+using System.Globalization;
 
 namespace RulerOverlay.Services
 {
     /// <summary>
-    /// Result of a measurement calculation
+    /// Result of a measurement calculation.
     /// </summary>
     public class MeasurementResult
     {
-        public double Value { get; set; }
-        public string Unit { get; set; } = "pixels";
-        public string Formatted { get; set; } = "";
+        public double Value { get; init; }
+        public MeasurementUnit Unit { get; init; }
+        public string Formatted { get; init; } = "";
     }
 
     /// <summary>
-    /// Service for unit conversions and measurement calculations
-    /// Direct port from src/services/MeasurementEngine.ts
+    /// Unit conversion and measurement formatting.
+    /// This is the only place a measurement is turned into display text, so the
+    /// ruler, the magnifier, the clipboard and point-to-point mode all agree.
     /// </summary>
     public class MeasurementEngine
     {
-        private double _ppi; // Pixels Per Inch
+        private double _ppi;
 
-        public MeasurementEngine(double ppi = 96)
+        public MeasurementEngine(double ppi = RulerDefaults.Ppi)
         {
-            _ppi = ppi;
+            Ppi = ppi;
         }
 
-        public void SetPPI(double ppi)
+        /// <summary>
+        /// Pixels per inch used for physical-unit conversions.
+        /// Non-positive values are rejected so a bad calibration cannot produce
+        /// infinite or negative measurements.
+        /// </summary>
+        public double Ppi
         {
-            _ppi = ppi;
+            get => _ppi;
+            set => _ppi = value > 0 ? value : RulerDefaults.Ppi;
         }
 
-        public double GetPPI()
-        {
-            return _ppi;
-        }
+        public double PixelsToInches(double pixels) => pixels / _ppi;
 
-        public double PixelsToInches(double pixels)
-        {
-            return pixels / _ppi;
-        }
+        public double PixelsToCentimeters(double pixels) => (pixels / _ppi) * MeasurementUnits.CentimetersPerInch;
 
-        public double PixelsToCentimeters(double pixels)
+        /// <summary>
+        /// Converts a pixel length into the requested unit's numeric value.
+        /// </summary>
+        public double ToUnit(double pixels, MeasurementUnit unit) => unit switch
         {
-            return (pixels / _ppi) * 2.54;
-        }
+            MeasurementUnit.Inches => PixelsToInches(pixels),
+            MeasurementUnit.Centimeters => PixelsToCentimeters(pixels),
+            _ => pixels
+        };
 
-        public double InchesToPixels(double inches)
+        /// <summary>
+        /// Converts a pixel length and formats it for display, e.g. "12.70 cm".
+        /// </summary>
+        public MeasurementResult Convert(double pixels, MeasurementUnit unit)
         {
-            return inches * _ppi;
-        }
-
-        public double CentimetersToPixels(double cm)
-        {
-            return (cm / 2.54) * _ppi;
-        }
-
-        public MeasurementResult Convert(double pixels, string targetUnit)
-        {
-            double value;
-
-            switch (targetUnit.ToLower())
-            {
-                case "inches":
-                    value = PixelsToInches(pixels);
-                    break;
-                case "centimeters":
-                    value = PixelsToCentimeters(pixels);
-                    break;
-                case "pixels":
-                default:
-                    value = pixels;
-                    break;
-            }
+            var value = ToUnit(pixels, unit);
 
             return new MeasurementResult
             {
                 Value = value,
-                Unit = targetUnit,
-                Formatted = FormatMeasurement(value, targetUnit)
+                Unit = unit,
+                Formatted = Format(pixels, unit)
             };
         }
 
-        private string FormatMeasurement(double value, string unit)
+        /// <summary>
+        /// Formats a pixel length in the given unit using the user's locale for the
+        /// number and the unit's own precision, e.g. "500 px" / "5.21 in".
+        /// </summary>
+        public string Format(double pixels, MeasurementUnit unit)
         {
-            var abbreviations = new System.Collections.Generic.Dictionary<string, string>
-            {
-                { "pixels", "px" },
-                { "inches", "in" },
-                { "centimeters", "cm" }
-            };
-
-            var precision = unit.ToLower() == "pixels" ? 0 : 2;
-            var abbr = abbreviations.ContainsKey(unit.ToLower()) ? abbreviations[unit.ToLower()] : "px";
-
-            return $"{value.ToString($"F{precision}")}{abbr}";
+            var value = ToUnit(pixels, unit);
+            return FormatValue(value, unit);
         }
 
-        public MeasurementResult CalculateDistance(
-            double x1,
-            double y1,
-            double x2,
-            double y2,
-            string unit = "pixels")
+        /// <summary>
+        /// Formats an already-converted value in the given unit.
+        /// </summary>
+        public static string FormatValue(double value, MeasurementUnit unit)
         {
-            var pixelDistance = Math.Sqrt(Math.Pow(x2 - x1, 2) + Math.Pow(y2 - y1, 2));
-            return Convert(pixelDistance, unit);
+            var text = value.ToString("F" + unit.Precision().ToString(CultureInfo.InvariantCulture),
+                                      CultureInfo.CurrentCulture);
+            return $"{text} {unit.Abbreviation()}";
+        }
+
+        /// <summary>
+        /// Formats a position together with the total it sits within, e.g. "1750 / 1755 px".
+        /// Used by the magnifier, where showing the cursor position alone is ambiguous
+        /// against the ruler's own length caption.
+        /// </summary>
+        public string FormatWithTotal(double pixels, double totalPixels, MeasurementUnit unit)
+        {
+            var format = "F" + unit.Precision().ToString(CultureInfo.InvariantCulture);
+            var position = ToUnit(pixels, unit).ToString(format, CultureInfo.CurrentCulture);
+            var total = ToUnit(totalPixels, unit).ToString(format, CultureInfo.CurrentCulture);
+
+            return $"{position} / {total} {unit.Abbreviation()}";
+        }
+
+        /// <summary>
+        /// Straight-line distance between two points, formatted in the given unit.
+        /// </summary>
+        public MeasurementResult CalculateDistance(double x1, double y1, double x2, double y2, MeasurementUnit unit)
+        {
+            var dx = x2 - x1;
+            var dy = y2 - y1;
+            return Convert(Math.Sqrt(dx * dx + dy * dy), unit);
         }
     }
 }

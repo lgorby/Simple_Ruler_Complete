@@ -1,10 +1,10 @@
-<Window x:Class="RulerOverlay.Windows.RulerWindow"
+﻿<Window x:Class="RulerOverlay.Windows.RulerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:converters="clr-namespace:RulerOverlay.Converters"
-        xmlns:local="clr-namespace:RulerOverlay.Controls"
+        xmlns:controls="clr-namespace:RulerOverlay.Controls"
         mc:Ignorable="d"
         Title="Ruler Overlay"
         Width="500" Height="90"
@@ -18,13 +18,13 @@
         PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.Resources>
-        <!-- Menu Converters -->
-        <converters:StringEqualsConverter x:Key="UnitEqualsConverter"/>
-        <converters:StringEqualsConverter x:Key="ColorEqualsConverter"/>
-        <converters:IntEqualsConverter x:Key="OpacityEqualsConverter"/>
-        <converters:IntEqualsConverter x:Key="RotationEqualsConverter"/>
-        <converters:BoolToMagnifierTextConverter x:Key="BoolToMagnifierTextConverter"/>
-        <converters:BoolToEdgeSnappingTextConverter x:Key="BoolToEdgeSnappingTextConverter"/>
+        <!--
+            One equality converter serves the unit, colour, opacity and rotation menus;
+            one text converter serves both Enable/Disable toggles, with the two captions
+            passed as the parameter.
+        -->
+        <converters:EqualsConverter x:Key="EqualsConverter"/>
+        <converters:BoolToTextConverter x:Key="BoolToTextConverter"/>
 
         <!-- Mini Icon Button Style -->
         <Style x:Key="MiniIconButtonStyle" TargetType="Button">
@@ -47,7 +47,7 @@
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="2">
                             <ContentPresenter HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"/>
+                                              VerticalAlignment="Center"/>
                         </Border>
                     </ControlTemplate>
                 </Setter.Value>
@@ -61,6 +61,187 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <!-- Shared context menu, so the right-click menu and the ☰ button open the same one -->
+        <ContextMenu x:Key="RulerContextMenu">
+            <!-- Position -->
+            <MenuItem Header="Reset to Center"
+                      Command="{Binding ResetPositionCommand}"
+                      InputGestureText="Ctrl+R"/>
+
+            <Separator/>
+
+            <!-- Calibration -->
+            <MenuItem Header="Calibrate Screen..."
+                      Click="CalibrateScreen_Click"/>
+            <MenuItem Header="{Binding Ppi, StringFormat='Current PPI: {0}'}"
+                      IsEnabled="False"/>
+
+            <Separator/>
+
+            <!-- Help -->
+            <MenuItem Header="Help &amp; Shortcuts"
+                      Click="ShowHelp_Click"
+                      InputGestureText="F1"/>
+
+            <Separator/>
+
+            <!-- Copy -->
+            <MenuItem Header="Copy Measurement"
+                      Command="{Binding CopyMeasurementCommand}"
+                      InputGestureText="Ctrl+C"/>
+            <MenuItem Header="{Binding FormattedLength, StringFormat='Current: {0}'}"
+                      IsEnabled="False"/>
+
+            <Separator/>
+
+            <!-- Measurement Unit -->
+            <MenuItem Header="Measurement Unit">
+                <MenuItem Header="Pixels"
+                          Command="{Binding SetUnitCommand}"
+                          CommandParameter="pixels"
+                          IsCheckable="True"
+                          IsChecked="{Binding UnitKey, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=pixels}"/>
+                <MenuItem Header="Inches"
+                          Command="{Binding SetUnitCommand}"
+                          CommandParameter="inches"
+                          IsCheckable="True"
+                          IsChecked="{Binding UnitKey, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=inches}"/>
+                <MenuItem Header="Centimeters"
+                          Command="{Binding SetUnitCommand}"
+                          CommandParameter="centimeters"
+                          IsCheckable="True"
+                          IsChecked="{Binding UnitKey, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=centimeters}"/>
+            </MenuItem>
+
+            <Separator/>
+
+            <!-- Transparency -->
+            <MenuItem Header="Transparency">
+                <MenuItem Header="20%"
+                          Command="{Binding SetOpacityCommand}"
+                          CommandParameter="20"
+                          IsCheckable="True"
+                          IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=20}"/>
+                <MenuItem Header="40%"
+                          Command="{Binding SetOpacityCommand}"
+                          CommandParameter="40"
+                          IsCheckable="True"
+                          IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=40}"/>
+                <MenuItem Header="60%"
+                          Command="{Binding SetOpacityCommand}"
+                          CommandParameter="60"
+                          IsCheckable="True"
+                          IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=60}"/>
+                <MenuItem Header="80%"
+                          Command="{Binding SetOpacityCommand}"
+                          CommandParameter="80"
+                          IsCheckable="True"
+                          IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=80}"/>
+                <MenuItem Header="100%"
+                          Command="{Binding SetOpacityCommand}"
+                          CommandParameter="100"
+                          IsCheckable="True"
+                          IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=100}"/>
+            </MenuItem>
+
+            <Separator/>
+
+            <!-- Color -->
+            <MenuItem Header="Color">
+                <MenuItem Header="White"
+                          Command="{Binding SetColorCommand}"
+                          CommandParameter="white"
+                          IsCheckable="True"
+                          IsChecked="{Binding Color, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=white}"/>
+                <MenuItem Header="Black"
+                          Command="{Binding SetColorCommand}"
+                          CommandParameter="black"
+                          IsCheckable="True"
+                          IsChecked="{Binding Color, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=black}"/>
+                <MenuItem Header="Yellow"
+                          Command="{Binding SetColorCommand}"
+                          CommandParameter="yellow"
+                          IsCheckable="True"
+                          IsChecked="{Binding Color, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=yellow}"/>
+                <MenuItem Header="Cyan"
+                          Command="{Binding SetColorCommand}"
+                          CommandParameter="cyan"
+                          IsCheckable="True"
+                          IsChecked="{Binding Color, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=cyan}"/>
+            </MenuItem>
+
+            <Separator/>
+
+            <!-- Point-to-Point -->
+            <MenuItem Header="Point-to-Point Mode"
+                      Click="PointToPointMode_Click"
+                      InputGestureText="Ctrl+P"/>
+
+            <!-- Edge Guides -->
+            <MenuItem Header="Clear All Guides"
+                      Command="{Binding ClearGuidesCommand}"
+                      InputGestureText="Ctrl+G"/>
+
+            <Separator/>
+
+            <!-- Magnifier -->
+            <MenuItem Header="{Binding MagnifierEnabled, Converter={StaticResource BoolToTextConverter}, ConverterParameter='Enable Magnifier|Disable Magnifier'}"
+                      Command="{Binding ToggleMagnifierCommand}"
+                      InputGestureText="Ctrl+M"
+                      IsCheckable="True"
+                      IsChecked="{Binding MagnifierEnabled, Mode=OneWay}"/>
+
+            <!-- Edge Snapping -->
+            <MenuItem Header="{Binding EdgeSnappingEnabled, Converter={StaticResource BoolToTextConverter}, ConverterParameter='Enable Edge Snapping|Disable Edge Snapping'}"
+                      Command="{Binding ToggleEdgeSnappingCommand}"
+                      InputGestureText="Ctrl+S"
+                      IsCheckable="True"
+                      IsChecked="{Binding EdgeSnappingEnabled, Mode=OneWay}"/>
+
+            <Separator/>
+
+            <!-- Window Management -->
+            <MenuItem Header="Minimize to System Tray"
+                      Click="MinimizeToTray_Click"/>
+
+            <Separator/>
+
+            <!-- Rotation. Angles mirror RulerDefaults.RotationPresets. -->
+            <MenuItem Header="Rotation">
+                <MenuItem Header="0° (Horizontal)"
+                          Command="{Binding SetRotationCommand}"
+                          CommandParameter="0"
+                          IsCheckable="True"
+                          IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=0}"/>
+                <MenuItem Header="45°"
+                          Command="{Binding SetRotationCommand}"
+                          CommandParameter="45"
+                          IsCheckable="True"
+                          IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=45}"/>
+                <MenuItem Header="90° (Vertical)"
+                          Command="{Binding SetRotationCommand}"
+                          CommandParameter="90"
+                          IsCheckable="True"
+                          IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=90}"/>
+                <MenuItem Header="135°"
+                          Command="{Binding SetRotationCommand}"
+                          CommandParameter="135"
+                          IsCheckable="True"
+                          IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=135}"/>
+                <MenuItem Header="180°"
+                          Command="{Binding SetRotationCommand}"
+                          CommandParameter="180"
+                          IsCheckable="True"
+                          IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource EqualsConverter}, ConverterParameter=180}"/>
+            </MenuItem>
+
+            <Separator/>
+
+            <MenuItem Header="Close"
+                      Click="CloseApp_Click"
+                      InputGestureText="Ctrl+Q"/>
+        </ContextMenu>
     </Window.Resources>
 
     <Canvas x:Name="RootCanvas">
@@ -68,319 +249,184 @@
               Width="{Binding Width}"
               Height="{Binding Height}">
             <!-- Rotation and Translation Transform -->
+            <!--
+                Transform order is scale, then rotate, then translate.
+
+                The scale is set to 1/DPI in code-behind, which makes one unit inside
+                RootGrid equal exactly one physical screen pixel. Without it the ruler is
+                laid out in WPF's device-independent pixels, so on a 125% display a ruler
+                labelled "500 px" actually spans 625 real pixels - and the inch/cm
+                conversions, whose PPI is derived from the monitor's physical resolution,
+                are wrong by the same factor.
+            -->
             <Grid.RenderTransform>
                 <TransformGroup>
-                    <RotateTransform x:Name="RotationTransform" Angle="{Binding Rotation}" />
-                    <TranslateTransform x:Name="TranslationTransform" />
+                    <ScaleTransform x:Name="PixelScaleTransform"/>
+                    <RotateTransform x:Name="RotationTransform" Angle="{Binding Rotation}"/>
+                    <TranslateTransform x:Name="TranslationTransform"/>
                 </TransformGroup>
             </Grid.RenderTransform>
 
             <!-- Main Ruler Background -->
-        <Border x:Name="RulerBackground"
-                Background="{Binding BackgroundBrush}"
-                CornerRadius="3">
+            <Border x:Name="RulerBackground"
+                    Background="{Binding BackgroundBrush}"
+                    CornerRadius="3"
+                    ContextMenu="{StaticResource RulerContextMenu}"
+                    ContextMenuOpening="RulerBackground_ContextMenuOpening">
 
-            <!-- Context Menu -->
-            <Border.ContextMenu>
-                <ContextMenu>
-                    <!-- Position Section -->
-                    <MenuItem Header="Reset to Center"
-                              Command="{Binding ResetPositionCommand}"
-                              InputGestureText="Ctrl+R"/>
+                <Grid ClipToBounds="True">
+                    <!-- Ruler Markings - canvas size matches ruler dimensions -->
+                    <Canvas x:Name="MarkingsCanvas"
+                            Width="{Binding Width}"
+                            Height="{Binding Height}"/>
 
-                    <Separator/>
+                    <!-- Edge Guides -->
+                    <ItemsControl ItemsSource="{Binding EdgeGuides}"
+                                  IsHitTestVisible="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <Canvas/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemContainerStyle>
+                            <Style TargetType="ContentPresenter">
+                                <Setter Property="Canvas.Left" Value="{Binding Position}"/>
+                            </Style>
+                        </ItemsControl.ItemContainerStyle>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!--
+                                    The guide spans the ruler's full height, taken from the
+                                    ViewModel rather than a hard-coded value, so it still
+                                    reaches both edges if the ruler height changes.
+                                -->
+                                <Grid>
+                                    <Rectangle Width="2"
+                                               Height="{Binding DataContext.Height,
+                                                                RelativeSource={RelativeSource AncestorType=Window}}"
+                                               Fill="Magenta"
+                                               Opacity="0.8"
+                                               HorizontalAlignment="Left"
+                                               VerticalAlignment="Top">
+                                        <Rectangle.Effect>
+                                            <DropShadowEffect Color="Magenta" BlurRadius="6"
+                                                              ShadowDepth="0" Opacity="0.6"/>
+                                        </Rectangle.Effect>
+                                    </Rectangle>
+                                    <TextBlock Text="{Binding Label}"
+                                               FontSize="9"
+                                               RenderTransformOrigin="0,1"
+                                               Foreground="Magenta"
+                                               FontWeight="Bold"
+                                               Margin="4,0,0,2"
+                                               HorizontalAlignment="Left"
+                                               VerticalAlignment="Bottom">
+                                        <TextBlock.RenderTransform>
+                                            <ScaleTransform
+                                                ScaleX="{Binding DataContext.PixelScale, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                ScaleY="{Binding DataContext.PixelScale, RelativeSource={RelativeSource AncestorType=Window}}"/>
+                                        </TextBlock.RenderTransform>
+                                    </TextBlock>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
 
-                    <!-- Calibration Section -->
-                    <MenuItem Header="Calibrate Screen..."
-                              Click="CalibrateScreen_Click"/>
-                    <MenuItem Header="{Binding Ppi, StringFormat='Current PPI: {0}'}"
-                              IsEnabled="False"
-                              Foreground="Gray"/>
-
-                    <Separator/>
-
-                    <!-- Help Section -->
-                    <MenuItem Header="Help &amp; Shortcuts"
-                              Click="ShowHelp_Click"
-                              InputGestureText="F1"/>
-
-                    <Separator/>
-
-                    <!-- Copy Measurement Section -->
-                    <MenuItem Header="Copy Measurement"
-                              Command="{Binding CopyMeasurementCommand}"
-                              InputGestureText="Ctrl+C"/>
-                    <MenuItem Header="{Binding Width, StringFormat='Current: {0:F0} px'}"
-                              IsEnabled="False"
-                              Foreground="Gray"/>
-
-                    <Separator/>
-
-                    <!-- Measurement Unit Section -->
-                    <MenuItem Header="Measurement Unit">
-                        <MenuItem Header="Pixels"
-                                  Command="{Binding SetUnitCommand}"
-                                  CommandParameter="pixels"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Unit, Mode=OneWay, Converter={StaticResource UnitEqualsConverter}, ConverterParameter=pixels}"/>
-                        <MenuItem Header="Inches"
-                                  Command="{Binding SetUnitCommand}"
-                                  CommandParameter="inches"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Unit, Mode=OneWay, Converter={StaticResource UnitEqualsConverter}, ConverterParameter=inches}"/>
-                        <MenuItem Header="Centimeters"
-                                  Command="{Binding SetUnitCommand}"
-                                  CommandParameter="centimeters"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Unit, Mode=OneWay, Converter={StaticResource UnitEqualsConverter}, ConverterParameter=centimeters}"/>
-                    </MenuItem>
-
-                    <Separator/>
-
-                    <!-- Transparency Section -->
-                    <MenuItem Header="Transparency">
-                        <MenuItem Header="20%"
-                                  Command="{Binding SetOpacityCommand}"
-                                  CommandParameter="20"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource OpacityEqualsConverter}, ConverterParameter=20}"/>
-                        <MenuItem Header="40%"
-                                  Command="{Binding SetOpacityCommand}"
-                                  CommandParameter="40"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource OpacityEqualsConverter}, ConverterParameter=40}"/>
-                        <MenuItem Header="60%"
-                                  Command="{Binding SetOpacityCommand}"
-                                  CommandParameter="60"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource OpacityEqualsConverter}, ConverterParameter=60}"/>
-                        <MenuItem Header="80%"
-                                  Command="{Binding SetOpacityCommand}"
-                                  CommandParameter="80"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource OpacityEqualsConverter}, ConverterParameter=80}"/>
-                        <MenuItem Header="100%"
-                                  Command="{Binding SetOpacityCommand}"
-                                  CommandParameter="100"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Opacity, Mode=OneWay, Converter={StaticResource OpacityEqualsConverter}, ConverterParameter=100}"/>
-                    </MenuItem>
-
-                    <Separator/>
-
-                    <!-- Color Section -->
-                    <MenuItem Header="Color">
-                        <MenuItem Header="White"
-                                  Command="{Binding SetColorCommand}"
-                                  CommandParameter="white"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Color, Mode=OneWay, Converter={StaticResource ColorEqualsConverter}, ConverterParameter=white}"/>
-                        <MenuItem Header="Black"
-                                  Command="{Binding SetColorCommand}"
-                                  CommandParameter="black"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Color, Mode=OneWay, Converter={StaticResource ColorEqualsConverter}, ConverterParameter=black}"/>
-                        <MenuItem Header="Yellow"
-                                  Command="{Binding SetColorCommand}"
-                                  CommandParameter="yellow"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Color, Mode=OneWay, Converter={StaticResource ColorEqualsConverter}, ConverterParameter=yellow}"/>
-                        <MenuItem Header="Cyan"
-                                  Command="{Binding SetColorCommand}"
-                                  CommandParameter="cyan"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Color, Mode=OneWay, Converter={StaticResource ColorEqualsConverter}, ConverterParameter=cyan}"/>
-                    </MenuItem>
-
-                    <Separator/>
-
-                    <!-- Point-to-Point Mode Section -->
-                    <MenuItem Header="Point-to-Point Mode"
-                              Click="PointToPointMode_Click"
-                              InputGestureText="Ctrl+P"/>
-
-                    <!-- Edge Guides Section -->
-                    <MenuItem Header="Clear All Guides"
-                              Command="{Binding ClearGuidesCommand}"/>
-
-                    <Separator/>
-
-                    <!-- Magnifier Section -->
-                    <MenuItem Header="{Binding MagnifierEnabled, Converter={StaticResource BoolToMagnifierTextConverter}}"
-                              Command="{Binding ToggleMagnifierCommand}"
-                              InputGestureText="Ctrl+M"
-                              IsCheckable="True"
-                              IsChecked="{Binding MagnifierEnabled, Mode=OneWay}"/>
-
-                    <!-- Edge Snapping Section -->
-                    <MenuItem Header="{Binding EdgeSnappingEnabled, Converter={StaticResource BoolToEdgeSnappingTextConverter}}"
-                              Command="{Binding ToggleEdgeSnappingCommand}"
-                              InputGestureText="Ctrl+S"
-                              IsCheckable="True"
-                              IsChecked="{Binding EdgeSnappingEnabled, Mode=OneWay}"/>
-
-                    <Separator/>
-
-                    <!-- Window Management Section -->
-                    <MenuItem Header="Minimize to System Tray"
-                              Click="MinimizeToTray_Click"/>
-
-                    <Separator/>
-
-                    <!-- Rotation Section -->
-                    <MenuItem Header="Rotation">
-                        <MenuItem Header="0° (Horizontal)"
-                                  Command="{Binding SetRotationCommand}"
-                                  CommandParameter="0"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource RotationEqualsConverter}, ConverterParameter=0}"/>
-                        <MenuItem Header="45°"
-                                  Command="{Binding SetRotationCommand}"
-                                  CommandParameter="45"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource RotationEqualsConverter}, ConverterParameter=45}"/>
-                        <MenuItem Header="90° (Vertical)"
-                                  Command="{Binding SetRotationCommand}"
-                                  CommandParameter="90"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource RotationEqualsConverter}, ConverterParameter=90}"/>
-                        <MenuItem Header="135°"
-                                  Command="{Binding SetRotationCommand}"
-                                  CommandParameter="135"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource RotationEqualsConverter}, ConverterParameter=135}"/>
-                        <MenuItem Header="180°"
-                                  Command="{Binding SetRotationCommand}"
-                                  CommandParameter="180"
-                                  IsCheckable="True"
-                                  IsChecked="{Binding Rotation, Mode=OneWay, Converter={StaticResource RotationEqualsConverter}, ConverterParameter=180}"/>
-                    </MenuItem>
-
-                    <Separator/>
-
-                    <!-- Close Section -->
-                    <MenuItem Header="Close"
-                              Click="CloseApp_Click"
-                              InputGestureText="Ctrl+Q"/>
-                </ContextMenu>
-            </Border.ContextMenu>
-
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <!-- Ruler Markings - Canvas size matches ruler dimensions -->
-                <Canvas x:Name="MarkingsCanvas"
-                        Width="{Binding Width}"
-                        Height="{Binding Height}" />
-
-                <!-- Mini Function Icons (visible on hover) -->
-                <StackPanel Orientation="Horizontal"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center"
-                            Margin="0,8,0,0">
-                    <StackPanel.Style>
-                        <Style TargetType="StackPanel">
-                            <Setter Property="Opacity" Value="0"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsMouseOver, ElementName=RulerBackground}" Value="True">
-                                    <Setter Property="Opacity" Value="1"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </StackPanel.Style>
-                    <!-- Minimize to Tray Icon -->
-                    <Button Content="▼"
-                            Click="MinimizeToTray_Click"
-                            ToolTip="Minimize to System Tray"
-                            Style="{StaticResource MiniIconButtonStyle}"/>
-
-                    <!-- Rotate Icon -->
-                    <Button Click="QuickRotate_Click"
-                            ToolTip="Rotate 90°"
-                            Style="{StaticResource MiniIconButtonStyle}">
-                        <TextBlock Text="⤾" Margin="0,-4,0,0"/>
-                    </Button>
-
-                    <!-- Point-to-Point Icon -->
-                    <Button Content="⟷"
-                            Click="PointToPointMode_Click"
-                            ToolTip="Point-to-Point Mode (Ctrl+P)"
-                            Style="{StaticResource MiniIconButtonStyle}"/>
-
-                    <!-- Options/Menu Icon -->
-                    <Button Content="☰"
-                            Click="ShowContextMenu_Click"
-                            ToolTip="Options"
-                            Style="{StaticResource MiniIconButtonStyle}"/>
-
-                    <!-- Close Icon -->
-                    <Button Content="✕"
-                            Click="CloseApp_Click"
-                            ToolTip="Close (Ctrl+Q)"
-                            Style="{StaticResource MiniIconButtonStyle}"/>
-                </StackPanel>
-
-                <!-- Edge Guides Canvas -->
-                <ItemsControl ItemsSource="{Binding EdgeGuides}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <Canvas/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Line X1="{Binding Position}" Y1="0"
-                                  X2="{Binding Position}" Y2="90"
-                                  Stroke="Magenta"
-                                  StrokeThickness="2"
-                                  Opacity="0.8">
-                                <Line.Effect>
-                                    <DropShadowEffect Color="Magenta" BlurRadius="6" ShadowDepth="0" Opacity="0.6"/>
-                                </Line.Effect>
-                            </Line>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-
-                <!-- Left Resize Handle -->
-                <Rectangle x:Name="LeftResizeHandle"
-                          Width="10"
-                          Fill="Transparent"
-                          Cursor="SizeWE"
-                          HorizontalAlignment="Left"
-                          MouseDown="LeftResizeHandle_MouseDown"
-                          MouseMove="ResizeHandle_MouseMove"
-                          MouseUp="ResizeHandle_MouseUp" />
-
-                <!-- Right Resize Handle -->
-                <Rectangle x:Name="RightResizeHandle"
-                          Width="10"
-                          Fill="Transparent"
-                          Cursor="SizeWE"
-                          HorizontalAlignment="Right"
-                          MouseDown="RightResizeHandle_MouseDown"
-                          MouseMove="ResizeHandle_MouseMove"
-                          MouseUp="ResizeHandle_MouseUp" />
-            </Grid>
-        </Border>
-
-            <!-- Toast Notification -->
-            <local:ToastControl x:Name="Toast"
+                    <!-- Mini Function Icons (visible on hover) -->
+                    <!--
+                        RootGrid is scaled by 1/DPI so its units are real pixels. Chrome is
+                        scaled back up by the same factor, otherwise the buttons and grab
+                        handles shrink on a high-DPI display.
+                    -->
+                    <StackPanel Orientation="Horizontal"
                                 HorizontalAlignment="Center"
-                                VerticalAlignment="Bottom"
-                                Margin="0,0,0,20"
-                                IsHitTestVisible="False"
-                                Panel.ZIndex="-1"/>
+                                VerticalAlignment="Center"
+                                RenderTransformOrigin="0.5,0.5">
+                        <StackPanel.RenderTransform>
+                            <ScaleTransform ScaleX="{Binding PixelScale}" ScaleY="{Binding PixelScale}"/>
+                        </StackPanel.RenderTransform>
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Opacity" Value="0"/>
+                                <Setter Property="IsHitTestVisible" Value="False"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsMouseOver, ElementName=RulerBackground}" Value="True">
+                                        <Setter Property="Opacity" Value="1"/>
+                                        <Setter Property="IsHitTestVisible" Value="True"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+
+                        <Button Content="▼"
+                                Click="MinimizeToTray_Click"
+                                ToolTip="Minimize to System Tray"
+                                Style="{StaticResource MiniIconButtonStyle}"/>
+
+                        <Button Click="QuickRotate_Click"
+                                ToolTip="Next preset angle"
+                                Style="{StaticResource MiniIconButtonStyle}">
+                            <TextBlock Text="⤾" Margin="0,-4,0,0"/>
+                        </Button>
+
+                        <Button Content="⟷"
+                                Click="PointToPointMode_Click"
+                                ToolTip="Point-to-Point Mode (Ctrl+P)"
+                                Style="{StaticResource MiniIconButtonStyle}"/>
+
+                        <Button Content="☰"
+                                Click="ShowContextMenu_Click"
+                                ToolTip="Options"
+                                Style="{StaticResource MiniIconButtonStyle}"/>
+
+                        <Button Content="✕"
+                                Click="CloseApp_Click"
+                                ToolTip="Close (Ctrl+Q)"
+                                Style="{StaticResource MiniIconButtonStyle}"/>
+                    </StackPanel>
+
+                    <!-- Resize Handles -->
+                    <Rectangle x:Name="LeftResizeHandle"
+                               Width="{Binding ResizeHandleWidth}"
+                               Fill="Transparent"
+                               Cursor="SizeWE"
+                               HorizontalAlignment="Left"
+                               MouseDown="LeftResizeHandle_MouseDown"
+                               MouseMove="ResizeHandle_MouseMove"
+                               MouseUp="ResizeHandle_MouseUp"/>
+
+                    <Rectangle x:Name="RightResizeHandle"
+                               Width="{Binding ResizeHandleWidth}"
+                               Fill="Transparent"
+                               Cursor="SizeWE"
+                               HorizontalAlignment="Right"
+                               MouseDown="RightResizeHandle_MouseDown"
+                               MouseMove="ResizeHandle_MouseMove"
+                               MouseUp="ResizeHandle_MouseUp"/>
+                </Grid>
+            </Border>
+
         </Grid>
 
-        <!-- Magnifier Popup (outside RootGrid so it is not affected by ruler rotation) -->
+        <!--
+            Toast lives in a popup rather than inside RootGrid. Inside the grid it would
+            inherit the ruler's rotation and be clipped by the window, which is only as
+            large as the ruler itself; it also previously carried Panel.ZIndex="-1", which
+            hid it behind the opaque ruler background entirely.
+        -->
+        <Popup x:Name="ToastPopup"
+               Placement="Absolute"
+               AllowsTransparency="True"
+               IsOpen="False">
+            <controls:ToastControl x:Name="Toast"/>
+        </Popup>
+
+        <!-- Magnifier popup lives outside RootGrid so ruler rotation does not tilt it -->
         <Popup x:Name="MagnifierPopup"
                Placement="Absolute"
                AllowsTransparency="True"
                IsOpen="False">
-            <local:MagnifierControl x:Name="Magnifier"/>
+            <controls:MagnifierControl x:Name="Magnifier"/>
         </Popup>
     </Canvas>
 </Window>
