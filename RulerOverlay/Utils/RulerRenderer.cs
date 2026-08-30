@@ -35,9 +35,22 @@ namespace RulerOverlay.Utils
 
         private static readonly MeasurementEngine TotalLabelEngine = new();
 
-        private static readonly Brush TickBrush = CreateFrozen(Colors.Black);
-        private static readonly Brush LabelBrush = CreateFrozen(Colors.Black);
-        private static readonly Brush TotalLabelBrush = CreateFrozen(Colors.DarkSlateGray);
+        // Markings must contrast with whatever the ruler is painted, so the brushes come
+        // from the current colour instead of being fixed. Rendering is single-threaded, and
+        // the colour changes rarely, so caching the last pair is enough.
+        private static string? _cachedColorName;
+        private static Brush _inkBrush = RulerColors.CreateInkBrush(RulerDefaults.Color);
+        private static Brush _accentBrush = RulerColors.CreateAccentBrush(RulerDefaults.Color);
+
+        private static void UseColor(string? colorName)
+        {
+            if (string.Equals(_cachedColorName, colorName, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            _cachedColorName = colorName;
+            _inkBrush = RulerColors.CreateInkBrush(colorName);
+            _accentBrush = RulerColors.CreateAccentBrush(colorName);
+        }
 
         /// <summary>
         /// Describes the tick spacing for one unit.
@@ -69,12 +82,18 @@ namespace RulerOverlay.Utils
         /// pixels and scaled down by this factor for display, so text is sized up by it to
         /// keep a constant apparent size on screen.
         /// </param>
+        /// <param name="colorName">
+        /// The ruler's background colour, so tick marks and labels can be drawn in a shade
+        /// that actually contrasts with it.
+        /// </param>
         public static void DrawMarkings(Canvas canvas, double width, double height,
                                         MeasurementUnit unit, int ppi, int rotation = 0,
-                                        double pixelScale = 1.0)
+                                        double pixelScale = 1.0, string? colorName = null)
         {
             if (canvas == null)
                 return;
+
+            UseColor(colorName ?? RulerDefaults.Color);
 
             canvas.Children.Clear();
 
@@ -183,7 +202,7 @@ namespace RulerOverlay.Utils
             canvas.Children.Add(new Path
             {
                 Data = geometry,
-                Stroke = TickBrush,
+                Stroke = _inkBrush,
                 StrokeThickness = 1,
                 SnapsToDevicePixels = true
             });
@@ -232,7 +251,7 @@ namespace RulerOverlay.Utils
             {
                 Text = text,
                 FontSize = LabelFontSize * pixelScale,
-                Foreground = LabelBrush,
+                Foreground = _inkBrush,
                 RenderTransformOrigin = new Point(0.5, 0.5)
             };
 
@@ -259,7 +278,7 @@ namespace RulerOverlay.Utils
                 Text = TotalLabelEngine.Format(width, unit),
                 FontSize = TotalLabelFontSize * pixelScale,
                 FontWeight = FontWeights.Bold,
-                Foreground = TotalLabelBrush,
+                Foreground = _accentBrush,
                 RenderTransformOrigin = new Point(0.5, 0.5)
             };
 
@@ -286,11 +305,5 @@ namespace RulerOverlay.Utils
         private static string FormatNumber(double value, int decimals) =>
             value.ToString("F" + decimals.ToString(CultureInfo.InvariantCulture), CultureInfo.CurrentCulture);
 
-        private static Brush CreateFrozen(Color color)
-        {
-            var brush = new SolidColorBrush(color);
-            brush.Freeze();
-            return brush;
-        }
     }
 }
