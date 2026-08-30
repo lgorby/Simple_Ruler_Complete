@@ -105,10 +105,16 @@ Using Visual Studio:
 
 Using .NET CLI:
 ```bash
-dotnet publish -c Release
+dotnet publish RulerOverlay/RulerOverlay.csproj -c Release -o publish
 ```
 
-The executable can be run from any location without installation.
+Or just run `build.bat`, which does the same thing and drops the result in
+`publish/RulerOverlay.exe`.
+
+The result is a self-contained single-file EXE (~155 MB) that runs from any
+location with no .NET runtime installed. Build output (`bin/`, `obj/`,
+`publish/`) is deliberately not committed, so a fresh clone must be built
+before there is an EXE to run.
 
 ## How Measurements Work
 
@@ -131,6 +137,12 @@ All settings are stored in a JSON config file located in the Windows AppData fol
 ```
 %APPDATA%\RulerOverlay\config.json
 ```
+
+This lives outside the repository, so it does not travel with a clone: on a new
+machine the ruler starts at its defaults, centered at 500x90. Copy that file
+across if you want your position, size, calibration and colour to follow you.
+The file is written atomically and validated on load, so a hand-edited or
+partially written config falls back to sane values rather than breaking startup.
 
 Settings include:
 - Ruler position, size, and rotation
@@ -178,6 +190,34 @@ The ruler is an overlay with no title bar, so it closes only through its own exi
 points: the **✕** button, **Ctrl+Q**, or **Exit** on the system-tray icon. External
 close requests such as Alt+F4 are ignored, so a stray keystroke cannot dismiss the
 ruler mid-measurement. A Windows sign-out or shutdown still closes it normally.
+
+## Project State
+
+Implemented and verified: DPI-correct measurement in real screen pixels,
+calibration, pixels/inches/centimeters, preset rotation, edge guides, edge
+snapping, magnifier (ruler and point-to-point), clipboard copy, system tray.
+
+Specified in `CLAUDE.md` but **not** implemented — these are open work, not bugs:
+
+| Feature | Status |
+|---|---|
+| Free rotation (Ctrl + drag outside the ruler) | not implemented; preset angles only |
+| Resize from corners | not implemented; left/right edges only |
+| Click-through mode | not implemented |
+
+`CLAUDE.md` holds the original project specification and is the backlog. It
+describes the intended feature set rather than the current state, so treat any
+difference between it and this section as work outstanding.
+
+### Development notes
+
+- `.gitattributes` pins line endings, so a clone on another machine will not
+  show every file as modified.
+- Shortcuts are window-local by design, never system-wide hotkeys — registering
+  `Ctrl+C` globally would hijack it in every other application.
+- Ruler geometry is in physical screen pixels; WPF chrome is in DIPs. The
+  `ScaleTransform` on `RootGrid` is what bridges the two, and
+  `Helpers/ScreenHelper.cs` owns every conversion.
 
 ## License
 
