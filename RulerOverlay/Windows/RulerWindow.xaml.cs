@@ -243,6 +243,12 @@ namespace RulerOverlay.Windows
 
             // The magnifier draws its reticle in real device pixels.
             Magnifier.PixelScale = _pixelScale;
+
+            foreach (var zone in new[] { TopLeftRotateZone, TopRightRotateZone,
+                                         BottomLeftRotateZone, BottomRightRotateZone })
+            {
+                zone.Cursor = CursorFactory.Rotation;
+            }
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -381,18 +387,32 @@ namespace RulerOverlay.Windows
             double rulerHeight = _viewModel.Height;
             var (cos, sin) = GetRotationVector(rotation);
 
-            // The four ruler corners after rotating about (0,0).
-            double x2 = rulerWidth * cos;
-            double y2 = rulerWidth * sin;
-            double x3 = -rulerHeight * sin;
-            double y3 = rulerHeight * cos;
-            double x4 = x2 + x3;
-            double y4 = y2 + y3;
+            // The window covers the ruler plus the rotation zones that sit beyond each
+            // corner, so the bounding box is taken from the outset rectangle rather than
+            // from the ruler itself. Without the padding there is nowhere outside the ruler
+            // to put a rotation handle.
+            double margin = RulerDefaults.RotationZoneSize * _pixelScale;
 
-            double minX = Math.Min(0, Math.Min(x2, Math.Min(x3, x4)));
-            double maxX = Math.Max(0, Math.Max(x2, Math.Max(x3, x4)));
-            double minY = Math.Min(0, Math.Min(y2, Math.Min(y3, y4)));
-            double maxY = Math.Max(0, Math.Max(y2, Math.Max(y3, y4)));
+            double left = -margin;
+            double top = -margin;
+            double right = rulerWidth + margin;
+            double bottom = rulerHeight + margin;
+
+            Span<double> xs = stackalloc double[4];
+            Span<double> ys = stackalloc double[4];
+            int i = 0;
+
+            foreach (var (cx, cy) in new[] { (left, top), (right, top), (left, bottom), (right, bottom) })
+            {
+                xs[i] = cx * cos - cy * sin;
+                ys[i] = cx * sin + cy * cos;
+                i++;
+            }
+
+            double minX = Math.Min(Math.Min(xs[0], xs[1]), Math.Min(xs[2], xs[3]));
+            double maxX = Math.Max(Math.Max(xs[0], xs[1]), Math.Max(xs[2], xs[3]));
+            double minY = Math.Min(Math.Min(ys[0], ys[1]), Math.Min(ys[2], ys[3]));
+            double maxY = Math.Max(Math.Max(ys[0], ys[1]), Math.Max(ys[2], ys[3]));
 
             Width = Math.Ceiling(ScreenHelper.ToLogical(maxX - minX, _pixelScale));
             Height = Math.Ceiling(ScreenHelper.ToLogical(maxY - minY, _pixelScale));
@@ -1164,6 +1184,17 @@ namespace RulerOverlay.Windows
         /// Ctrl already removes any ambiguity with dragging to move, so the gesture works
         /// anywhere on the ruler body.
         /// </summary>
+        /// <summary>
+        /// Starts a rotation from one of the corner zones. No modifier is needed here: the
+        /// zone sits outside the ruler body, so the gesture cannot be confused with a drag
+        /// to move, which is how rotation works in drawing tools generally.
+        /// </summary>
+        private void RotationZone_MouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.Left)
+                BeginRotation(e);
+        }
+
         private void BeginRotation(MouseButtonEventArgs e)
         {
             _isRotating = true;

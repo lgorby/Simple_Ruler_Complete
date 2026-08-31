@@ -23,6 +23,18 @@
             one text converter serves both Enable/Disable toggles, with the two captions
             passed as the parameter.
         -->
+        <!--
+            The window is layered (AllowsTransparency), so Windows hit-tests it by per-pixel
+            alpha: anything fully transparent is a hole and the click goes straight to
+            whatever is underneath, never reaching WPF. The rotation zones sit outside the
+            ruler's opaque body, so they need an alpha the compositor can see. One 255th of
+            an alpha step is invisible on screen but enough to make them clickable.
+
+            The resize handles get away with Fill="Transparent" only because they overlap the
+            ruler background, which is already opaque.
+        -->
+        <SolidColorBrush x:Key="HitTestableBrush" Color="#01000000"/>
+
         <converters:EqualsConverter x:Key="EqualsConverter"/>
         <converters:BoolToTextConverter x:Key="BoolToTextConverter"/>
 
@@ -466,6 +478,64 @@
                                MouseUp="ResizeHandle_MouseUp"/>
                 </Grid>
             </Border>
+
+            <!--
+                Rotation zones, one just beyond each ruler corner. This is the conventional
+                place for the gesture, so it needs no modifier key; Ctrl+drag on the body
+                does the same thing for anyone who prefers it.
+
+                They sit outside the Border via a negative margin, which is why the window's
+                bounding box is padded by RotationZoneSize. Only these four small squares
+                reach past the ruler, so very little extra screen becomes unclickable.
+                Each shows a quarter-arc on hover as the visual affordance.
+            -->
+            <Grid x:Name="RotationZones">
+                <Grid.Resources>
+                    <Style TargetType="Path">
+                        <Setter Property="Stroke" Value="#E0000000"/>
+                        <Setter Property="StrokeThickness" Value="2"/>
+                        <Setter Property="Opacity" Value="0"/>
+                        <Setter Property="IsHitTestVisible" Value="False"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsMouseOver, ElementName=RootGrid}" Value="True">
+                                <Setter Property="Opacity" Value="0.85"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Grid.Resources>
+
+                <Border x:Name="TopLeftRotateZone" Background="{StaticResource HitTestableBrush}"
+                        Width="{Binding RotationZoneSize}" Height="{Binding RotationZoneSize}"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="{Binding RotationZoneOffset}"
+                        MouseDown="RotationZone_MouseDown">
+                    <Path Data="M 12,2 A 10,10 0 0 0 2,12"/>
+                </Border>
+
+                <Border x:Name="TopRightRotateZone" Background="{StaticResource HitTestableBrush}"
+                        Width="{Binding RotationZoneSize}" Height="{Binding RotationZoneSize}"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="{Binding RotationZoneOffset}"
+                        MouseDown="RotationZone_MouseDown">
+                    <Path Data="M 4,2 A 10,10 0 0 1 14,12"/>
+                </Border>
+
+                <Border x:Name="BottomLeftRotateZone" Background="{StaticResource HitTestableBrush}"
+                        Width="{Binding RotationZoneSize}" Height="{Binding RotationZoneSize}"
+                        HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                        Margin="{Binding RotationZoneOffset}"
+                        MouseDown="RotationZone_MouseDown">
+                    <Path Data="M 2,4 A 10,10 0 0 0 12,14"/>
+                </Border>
+
+                <Border x:Name="BottomRightRotateZone" Background="{StaticResource HitTestableBrush}"
+                        Width="{Binding RotationZoneSize}" Height="{Binding RotationZoneSize}"
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                        Margin="{Binding RotationZoneOffset}"
+                        MouseDown="RotationZone_MouseDown">
+                    <Path Data="M 14,4 A 10,10 0 0 1 4,14"/>
+                </Border>
+            </Grid>
 
         </Grid>
 

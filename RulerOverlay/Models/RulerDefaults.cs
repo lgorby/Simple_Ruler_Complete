@@ -88,6 +88,13 @@ namespace RulerOverlay.Models
         /// </summary>
         public const double ResizeHandleWidth = 10.0;
 
+        /// <summary>
+        /// Size of the rotation grab zone sitting just beyond each ruler corner, in
+        /// device-independent pixels. This is how design tools expose rotation, so the
+        /// window is padded by this much to make room for it.
+        /// </summary>
+        public const double RotationZoneSize = 18.0;
+
         /// <summary>How long ruler changes are batched before the config file is rewritten.</summary>
         public static readonly TimeSpan ConfigSaveDebounce = TimeSpan.FromMilliseconds(400);
 

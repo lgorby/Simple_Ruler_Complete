@@ -7,6 +7,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Brush = System.Windows.Media.Brush;
+using Thickness = System.Windows.Thickness;
 using Drawing = System.Drawing;
 
 namespace RulerOverlay.ViewModels
@@ -224,12 +225,22 @@ namespace RulerOverlay.ViewModels
             set
             {
                 if (value > 0 && SetProperty(ref _pixelScale, value))
+                {
                     OnPropertyChanged(nameof(ResizeHandleWidth));
+                    OnPropertyChanged(nameof(RotationZoneSize));
+                    OnPropertyChanged(nameof(RotationZoneOffset));
+                }
             }
         }
 
         /// <summary>Resize strip width in ruler pixels, holding a constant apparent size.</summary>
         public double ResizeHandleWidth => RulerDefaults.ResizeHandleWidth * _pixelScale;
+
+        /// <summary>Rotation grab-zone size in ruler pixels, holding a constant apparent size.</summary>
+        public double RotationZoneSize => RulerDefaults.RotationZoneSize * _pixelScale;
+
+        /// <summary>Negative margin that pushes a rotation zone out past the ruler corner.</summary>
+        public Thickness RotationZoneOffset => new(-RotationZoneSize);
 
         /// <summary>
         /// Background brush for the current colour and opacity.

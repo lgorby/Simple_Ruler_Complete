@@ -177,7 +177,7 @@ every other application.
 
 1. **Move the Ruler**: Click and drag anywhere on the ruler body, or nudge it with the arrow keys
 2. **Resize**: Drag any edge to change one dimension, or a corner to change both. Left/right edges set the length, top/bottom set the thickness
-3. **Rotate**: Hold **Ctrl** and drag the ruler to spin it to any angle — the live angle is shown while you drag, and holding **Shift** as well snaps to 15° steps. For a fixed angle, right-click > Rotation (0°, 45°, 90°, 135°, 180°) or use the ⤾ button to step through them
+3. **Rotate**: Drag from just outside any **corner** — the standard rotation gesture, no modifier key needed. A curved arrow cursor and a small arc appear there on hover. Holding **Shift** snaps to 15° steps, and the live angle is shown while you drag. **Ctrl+drag** anywhere on the body does the same thing. For a fixed angle, right-click > Rotation (0°, 45°, 90°, 135°, 180°) or use the ⤾ button
 4. **Change Units**: Right-click and select from pixels, inches, or centimeters
 5. **Calibrate**: Right-click > Calibrate Screen, then enter your screen diagonal in inches
 6. **Point-to-Point**: Press Ctrl+P or right-click > Point-to-Point Mode, then click and drag to measure
@@ -202,10 +202,10 @@ snapping, magnifier (ruler and point-to-point), clipboard copy, system tray.
 Free rotation, resize from every edge and corner, and click-through mode are
 implemented and tested.
 
-One deliberate deviation from the spec: it describes free rotation as grabbing
-*just outside* the ruler. The window is only as large as the ruler's own bounding
-box, so there is no "just outside" region to click on. Ctrl already removes any
-ambiguity with dragging to move, so the gesture works anywhere on the ruler body.
+Rotation follows the usual convention from drawing tools: grab just outside a
+corner, no modifier required. The window is padded by a small margin to make room
+for those four zones, which is the only part of the ruler that extends past its
+own body. Ctrl+drag on the body is kept as an alternative.
 
 `CLAUDE.md` holds the original project specification and is the backlog. It
 describes the intended feature set rather than the current state, so treat any

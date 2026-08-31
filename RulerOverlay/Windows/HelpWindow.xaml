@@ -199,7 +199,7 @@
                     <LineBreak/>
                     <Run Text="• " FontWeight="Bold"/>
                     <Run Text="Rotate: " FontWeight="Bold"/>
-                    <Run Text="Hold Ctrl and drag to spin the ruler to any angle; add Shift to snap to 15° steps. Right-click → Rotation, or the ⤴ button, for the presets 0°, 45°, 90°, 135°, 180°"/>
+                    <Run Text="Drag from just outside any corner — a curved arrow cursor and a small arc appear there on hover. No modifier needed; hold Shift to snap to 15° steps. Ctrl+drag on the ruler body does the same. Right-click → Rotation, or the ⤴ button, for the presets 0°, 45°, 90°, 135°, 180°"/>
                     <LineBreak/>
                     <Run Text="• " FontWeight="Bold"/>
                     <Run Text="Change Unit: " FontWeight="Bold"/>
