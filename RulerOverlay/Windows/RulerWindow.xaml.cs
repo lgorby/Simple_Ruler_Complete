@@ -63,7 +63,14 @@ namespace RulerOverlay.Windows
             Bottom = 8
         }
 
+        /// <summary>
+        /// How far the pointer must travel before a press becomes a drag, in physical
+        /// pixels. Below this a press is just a click and must leave the ruler untouched.
+        /// </summary>
+        private const double DragThreshold = 3.0;
+
         // Resize state
+        private bool _resizePending;
         private bool _isResizing;
         private ResizeEdges _resizeEdges;
         private bool _suppressWindowSizeUpdate;
@@ -79,6 +86,7 @@ namespace RulerOverlay.Windows
         // Free rotation state
         private bool _isRotating;
         private Point _rotationPivot;
+        private Point _rotationStartScreenPoint;
         private double _rotationGrabAngle;
         private int _rotationStartValue;
 
@@ -901,11 +909,17 @@ namespace RulerOverlay.Windows
         /// as WPF transforms. Calling SetWindowPos on every mouse move instead makes DWM
         /// briefly present the previous frame at the new position, which reads as a jump.
         /// </summary>
+        /// <summary>
+        /// Arms a resize. Nothing visible happens yet: the window is only expanded once the
+        /// pointer has actually moved, because a plain click on a handle would otherwise
+        /// blank the ruler, blow the window up to full screen and snap it back, which reads
+        /// as a flicker.
+        /// </summary>
         private void BeginResize(ResizeEdges edges, MouseButtonEventArgs e, UIElement handle)
         {
-            _isResizing = true;
+            _resizePending = true;
+            _isResizing = false;
             _resizeEdges = edges;
-            _suppressWindowSizeUpdate = true;
             _resizeExpanded = false;
             _resizeStartScreenPoint = PointToScreen(e.GetPosition(this));
             _initialWidth = _viewModel.Width;
@@ -916,6 +930,22 @@ namespace RulerOverlay.Windows
             var anchorScreen = LocalToScreen(anchor.X, anchor.Y);
             _anchorX = anchorScreen.X;
             _anchorY = anchorScreen.Y;
+
+            handle.CaptureMouse();
+            e.Handled = true;
+        }
+
+        /// <summary>
+        /// Promotes an armed press into a real drag, expanding the window to cover the screen.
+        ///
+        /// With the window already screen-sized the drag can be expressed entirely as WPF
+        /// transforms. Calling SetWindowPos on every mouse move instead makes DWM briefly
+        /// present the previous frame at the new position, which reads as a jump.
+        /// </summary>
+        private void StartResizeDrag()
+        {
+            _isResizing = true;
+            _suppressWindowSizeUpdate = true;
 
             // Work out the expansion while the window is still at its original position.
             var origin = PointToScreen(new Point(0, 0));
@@ -932,9 +962,6 @@ namespace RulerOverlay.Windows
 
             // Phase 1: hide the content so WPF submits a transparent frame to DWM.
             RootGrid.Opacity = 0;
-
-            handle.CaptureMouse();
-            e.Handled = true;
 
             // Phase 2: once that transparent frame is up, grow the window. DWM now has
             // nothing stale to show at the new position.
@@ -996,7 +1023,28 @@ namespace RulerOverlay.Windows
 
         private void ResizeHandle_MouseMove(object sender, MouseEventArgs e)
         {
-            if (!_isResizing || !_resizeExpanded || e.LeftButton != MouseButtonState.Pressed)
+            if (!_resizePending)
+                return;
+
+            if (e.LeftButton != MouseButtonState.Pressed)
+                return;
+
+            // Wait for real movement before disturbing the window.
+            if (!_isResizing)
+            {
+                var from = PointToScreen(e.GetPosition(this));
+                double moved = Math.Sqrt(
+                    Math.Pow(from.X - _resizeStartScreenPoint.X, 2) +
+                    Math.Pow(from.Y - _resizeStartScreenPoint.Y, 2));
+
+                if (moved < DragThreshold)
+                    return;
+
+                StartResizeDrag();
+                return;
+            }
+
+            if (!_resizeExpanded)
                 return;
 
             // Screen coordinates, so a change in window position cannot skew the delta.
@@ -1144,12 +1192,21 @@ namespace RulerOverlay.Windows
 
         private void ResizeHandle_MouseUp(object sender, MouseButtonEventArgs e)
         {
-            if (!_isResizing)
+            if (!_resizePending)
                 return;
+
+            _resizePending = false;
+            ((UIElement)sender).ReleaseMouseCapture();
+
+            // Never became a drag, so there is nothing to finalise and nothing to restore.
+            if (!_isResizing)
+            {
+                e.Handled = true;
+                return;
+            }
 
             _isResizing = false;
             _suppressWindowSizeUpdate = false;
-            ((UIElement)sender).ReleaseMouseCapture();
 
             // Shrink back to the exact bounding box for the final ruler size.
             AdjustWindowSizeForRotation(_viewModel.Rotation);
@@ -1202,11 +1259,11 @@ namespace RulerOverlay.Windows
 
             // Pivot about the ruler's centre, held fixed in screen space for the whole drag.
             _rotationPivot = LocalToScreen(_viewModel.Width / 2.0, _viewModel.Height / 2.0);
-            _rotationGrabAngle = AngleFromPivot(PointToScreen(e.GetPosition(this)));
+            _rotationStartScreenPoint = PointToScreen(e.GetPosition(this));
+            _rotationGrabAngle = AngleFromPivot(_rotationStartScreenPoint);
 
             HideMagnifier();
             CaptureMouse();
-            ShowAngleReadout();
             e.Handled = true;
         }
 
@@ -1215,7 +1272,23 @@ namespace RulerOverlay.Windows
         /// </summary>
         private void UpdateRotation()
         {
-            double delta = AngleFromPivot(PointToScreen(Mouse.GetPosition(this))) - _rotationGrabAngle;
+            var cursor = PointToScreen(Mouse.GetPosition(this));
+
+            // The readout only appears once this is genuinely a drag, so a plain click on a
+            // rotation zone does not flash it on and off.
+            if (!AngleReadoutPopup.IsOpen)
+            {
+                double moved = Math.Sqrt(
+                    Math.Pow(cursor.X - _rotationStartScreenPoint.X, 2) +
+                    Math.Pow(cursor.Y - _rotationStartScreenPoint.Y, 2));
+
+                if (moved < DragThreshold)
+                    return;
+
+                ShowAngleReadout();
+            }
+
+            double delta = AngleFromPivot(cursor) - _rotationGrabAngle;
             int angle = (int)Math.Round(_rotationStartValue + delta);
 
             // Shift snaps to coarse increments for lining up with something square.
