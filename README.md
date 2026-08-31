@@ -11,6 +11,7 @@ A desktop measurement overlay tool that provides precise on-screen measurements 
 - **Magnifier**: Zoom in near any ruler edge for precise pixel placement
 - **Edge Snapping**: Automatically snap to color boundaries on screen
 - **Calibration**: Calibrate to your specific screen for accurate measurements
+- **Click-Through Mode**: Let clicks reach the window underneath while the ruler stays visible on top
 - **Customization**: Adjust transparency and choose from multiple colors
 - **Keyboard Shortcuts**: Quick access to all features
 - **Portable**: No installation required - runs as standalone EXE
@@ -82,6 +83,7 @@ ruler-overlay/
 │   ├── Converters/            # WPF value converters
 │   │   └── MenuConverters.cs
 │   ├── Helpers/               # Utility classes
+│   │   ├── CursorFactory.cs   # draws the rotation cursor WPF lacks
 │   │   ├── DpiHelper.cs
 │   │   ├── ScreenHelper.cs    # DPI + multi-monitor geometry
 │   │   └── Win32Helper.cs
@@ -150,6 +152,7 @@ Settings include:
 - Transparency and color preferences
 - PPI calibration value
 - Magnifier zoom level
+- Edge snapping and click-through toggles
 - Keyboard shortcut preferences
 
 ## Keyboard Shortcuts
@@ -203,9 +206,17 @@ Free rotation, resize from every edge and corner, and click-through mode are
 implemented and tested.
 
 Rotation follows the usual convention from drawing tools: grab just outside a
-corner, no modifier required. The window is padded by a small margin to make room
-for those four zones, which is the only part of the ruler that extends past its
-own body. Ctrl+drag on the body is kept as an alternative.
+corner, no modifier required. Ctrl+drag on the body is kept as an alternative.
+
+### Known trade-offs
+
+- The four rotation zones sit just outside the ruler's corners, so the window is
+  padded by about 18 px on every side and those four small squares absorb clicks
+  that would otherwise reach the window behind. This is the cost of a standard
+  rotation handle; `RulerDefaults.RotationZoneSize` is the dial.
+- Transparency applies to the ruler body only. Markings stay fully opaque so the
+  scale is always readable, which means a very transparent ruler still shows a
+  solid scale rather than fading out entirely.
 
 `CLAUDE.md` holds the original project specification and is the backlog. It
 describes the intended feature set rather than the current state, so treat any
@@ -219,7 +230,18 @@ difference between it and this section as work outstanding.
   `Ctrl+C` globally would hijack it in every other application.
 - Ruler geometry is in physical screen pixels; WPF chrome is in DIPs. The
   `ScaleTransform` on `RootGrid` is what bridges the two, and
-  `Helpers/ScreenHelper.cs` owns every conversion.
+  `Helpers/ScreenHelper.cs` owns every conversion. Mixing the two spaces has
+  caused three separate bugs in this codebase, so convert at the boundary.
+- The window is layered (`AllowsTransparency="True"`), so **Windows hit-tests it
+  by per-pixel alpha**. Anything painted with a fully transparent brush is a hole:
+  the click passes to the window underneath and never reaches WPF. Interactive
+  elements that sit outside the ruler's opaque background must therefore paint a
+  non-zero alpha — see the `HitTestableBrush` used by the rotation zones. Elements
+  layered over the ruler body, like the resize handles, are unaffected.
+- Rotation and resize both hold one point fixed while the ruler changes shape, via
+  `LocalToScreen` in `RulerWindow.xaml.cs`. Changing the angle or size alters the
+  window's bounding box, so the position has to be corrected each frame or the
+  ruler drifts away from the cursor.
 
 ## License
 
